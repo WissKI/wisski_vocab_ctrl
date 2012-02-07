@@ -1,0 +1,7 @@
+; $Id$
+name = WissKI Vocabulary Control
+description = Module for import, management and export of controlled vocabularies
+core = 6.x
+package = "WissKI"
+dependencies[] = wisski_store
+dependencies[] = wisski_pathbuilder

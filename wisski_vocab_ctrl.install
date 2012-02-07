@@ -1,0 +1,235 @@
+<?php
+// $ID$
+
+/* defines the length of the varchar fields. */
+define('WISSKI_VOCAB_CTRL_MAX_URI_LENGTH', 10000);
+define('WISSKI_VOCAB_CTRL_MAX_LABEL_LENGTH', 300);
+
+function wisski_vocab_ctrl_schema () {
+
+  $schemas = array();
+
+  $schemas['wisski_vocab_ctrl_index'] = array(
+    'description' => 'term labels',
+    'fields' => array(
+      'fid' => array(
+        'description' => 'label, alt_label, etc.',
+        'type' => 'varchar',
+        'length' => 20,
+        'not null' => TRUE,
+      ),
+      'value' => array(
+        'description' => 'the label, the term name',
+        'type' => 'varchar',
+        'length' => WISSKI_VOCAB_CTRL_MAX_LABEL_LENGTH,
+        'not null' => TRUE,
+      ),
+      'lang' => array(
+        'description' => 'a lang code',
+        'type' => 'varchar',
+        'length' => 11,
+        'default' => '',
+        'not null' => TRUE,
+      ),
+      'vid' => array(
+        'description' => 'the vocabulary',
+        'type' => 'int',
+        'size' => 'normal',
+        'not null' => TRUE,
+      ),
+      'uri' => array(
+        'description' => 'the term',
+        'type' => 'varchar',
+        'length' => WISSKI_VOCAB_CTRL_MAX_URI_LENGTH,
+        'not null' => TRUE,
+      ),
+    ),
+    'indexes' => array(
+      'value' => array(array('value', 100)),
+      'value_lang' => array(array('value', 100), 'lang'),
+      'value_lang_fid' => array(array('value', 100), 'lang', 'fid'),
+      'value_fid' => array(array('value', 100), 'fid'),
+      'lang_fid' => array('lang', 'fid'),
+    ),
+  );
+
+  
+  $schemas['wisski_vocab_ctrl_fields'] = array(
+    'description' => 'field definitions',
+    'fields' => array(
+      'fid' => array(
+        'type' => 'varchar',
+        'length' => 20,
+        'not null' => TRUE,
+      ),
+      'origin' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+      ),
+      'name' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+      ),
+      'target_type' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+      ),
+      'description' => array(
+        'type' => 'text',
+        'size' => 'normal',
+        'not null' => TRUE,
+      ),
+    ),
+    'primary key' => array('fid'),
+  );
+  
+  $schemas['wisski_vocab_ctrl_mappings'] = array(
+    'description' => 'mapping definitions',
+    'fields' => array(
+      'mid' => array(
+        'type' => 'varchar',
+        'length' => 20,
+        'not null' => TRUE,
+      ),
+      'name' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+      ),
+      'pattern' => array(
+        'type' => 'text',
+        'size' => 'normal',
+        'not null' => TRUE,
+      ),
+      'regex' => array(
+        'type' => 'text',
+        'size' => 'normal',
+        'not null' => TRUE,
+      ),
+      'description' => array(
+        'type' => 'text',
+        'size' => 'normal',
+        'not null' => TRUE,
+      ),
+    ),
+    'primary key' => array('mid'),
+  );
+  
+  $schemas['wisski_vocab_ctrl_vocabularies'] = array(
+    'description' => 'vocabulary management metadata',
+    'fields' => array(
+      'vid' => array(
+        'type' => 'serial',
+        'size' => 'normal',
+        'not null' => TRUE,
+      ),
+      'name' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+      ),
+      'aid' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+      ),
+      'priority' => array(
+        'type' => 'int',
+        'size' => 'tiny',
+        'default' => 0,
+      ),
+      'group_id' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+      ),
+      'fields' => array(
+        'type' => 'text',
+        'serialize' => TRUE,
+        'size' => 'normal',
+        'not null' => TRUE,
+      ),
+      'indices' => array(
+        'type' => 'text',
+        'serialize' => TRUE,
+        'size' => 'normal',
+        'not null' => TRUE,
+      ),
+    ),
+    'primary key' => array('vid'),
+  );
+  
+  return $schemas;
+  
+}
+
+function wisski_vocab_ctrl_install () {
+  drupal_install_schema('wisski_vocab_ctrl');
+    
+  // add some predefined fields
+  $fields = array(
+      // Longitude field
+      'longitude',
+      'user',
+      'Longitude',
+      'literal',
+      'This field may be used for longitude of places.',
+      // Latitude field
+      'latitude',
+      'user',
+      'Latitude',
+      'literal',
+      'This field may be used for latitude of places.',
+  );
+  db_query('INSERT INTO {wisski_vocab_ctrl_fields} VALUES ' . join(', ', array_fill(0, count($fields) / 5, "('%s', '%s','%s', '%s','%s')")), $fields);
+
+  // add some mappings
+  $mappings = array(
+    // SKOS preflabel
+    'skos_preflabel',
+    'SKOS prefLabel',
+    '?source <http://www.w3.org/2004/02/skos/core#prefLabel> ?target',
+    '',
+    'This mapping will find data labelled with skos:prefLabel',
+    // SKOS altlabel
+    'skos_altlabel',
+    'SKOS altLabel',
+    '?source <http://www.w3.org/2004/02/skos/core#altLabel> ?target',
+    '',
+    'This mapping will find data labelled with skos:altLabel',
+    // SKOS broader
+    'skos_broader',
+    'SKOS broader',
+    '?source <http://www.w3.org/2004/02/skos/core#broader> ?target',
+    '',
+    'This mapping will find instances that are marked as broader with skos:broader',
+    // SKOS narrower
+    'skos_narrower',
+    'SKOS narrower',
+    '?source <http://www.w3.org/2004/02/skos/core#narrower> ?target',
+    '',
+    'This mapping will find instances that are marked as narrower with skos:narrower',
+    // WGS84 lat
+    'wgs84_lat',
+    'WGS84 Lat',
+    '?source <http://www.w3.org/2003/01/geo/wgs84_pos#lat> ?target',
+    '',
+    'The latitude according to the WGS84 vocabulary',
+    // WGS84 long
+    'wgs84_long',
+    'WGS84 Long',
+    '?source <http://www.w3.org/2003/01/geo/wgs84_pos#long> ?target',
+    '',
+    'The longitude according to the WGS84 vocabulary',
+  );
+  db_query('INSERT INTO {wisski_vocab_ctrl_mappings} VALUES ' . join(', ', array_fill(0, count($mappings) / 5, "('%s', '%s','%s', '%s','%s')")), $mappings);
+
+}
+
+
+function wisski_vocab_ctrl_uninstall () {
+  drupal_uninstall_schema('wisski_vocab_ctrl');
+}

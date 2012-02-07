@@ -1,0 +1,498 @@
+<?php
+// $Id$
+
+/*
+* @author Martin Scholz, unless otherwise noted
+*/
+
+
+
+function wisski_vocab_ctrl_perm () {
+  return array('wisski administrate page');
+}
+
+
+function wisski_vocab_ctrl_theme() {
+  return array(
+    'wisski_vocab_ctrl_table' => array(
+      'file' => 'wisski_vocab_ctrl.admin.inc',
+      'arguments' => array('form' => NULL),
+    ),
+    'wisski_vocab_ctrl_field_settings_table' => array(
+      'file' => 'wisski_vocab_ctrl.admin.inc',
+      'arguments' => array('form' => NULL),
+    ),
+  );
+}
+
+
+
+
+function wisski_vocab_ctrl_menu () {
+
+  $items = array();
+  $items['admin/settings/wisski/vocab_ctrl'] = array(
+      'title' => 'Vocabulary Control',
+      'type' => MENU_LOCAL_TASK,
+      'page callback' => 'wisski_vocab_ctrl_admin_list',
+      'page arguments' => array(),
+      'access arguments' => array('wisski administrate page'),
+      'file' => 'wisski_vocab_ctrl.admin.inc',
+      );
+  $items['admin/settings/wisski/vocab_ctrl/mappings'] = array(
+      'title' => 'Mappings',
+      'type' => MENU_LOCAL_TASK,
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('wisski_vocab_ctrl_admin_mapping_settings'),
+      'access arguments' => array('wisski administrate page'),
+      'file' => 'wisski_vocab_ctrl.admin.inc',
+      );
+  $items['admin/settings/wisski/vocab_ctrl/fields'] = array(
+      'title' => 'Fields',
+      'type' => MENU_LOCAL_TASK,
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('wisski_vocab_ctrl_admin_field_settings'),
+      'access arguments' => array('wisski administrate page'),
+      'file' => 'wisski_vocab_ctrl.admin.inc',
+      );
+  $items['admin/settings/wisski/vocab_ctrl/list'] = array(
+      'title' => 'List',
+      'type' => MENU_DEFAULT_LOCAL_TASK,
+      'page callback' => 'wisski_vocab_ctrl_admin_list',
+      'page arguments' => array(),
+      'access arguments' => array('wisski administrate page'),
+      'file' => 'wisski_vocab_ctrl.admin.inc',
+      );
+  $items['admin/settings/wisski/vocab_ctrl/add'] = array(
+      'title' => 'Add',
+      'type' => MENU_LOCAL_TASK,
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('wisski_vocab_ctrl_admin_edit'),
+      'access arguments' => array('wisski administrate page'),
+      'file' => 'wisski_vocab_ctrl.admin.inc',
+      );
+  $items['admin/settings/wisski/vocab_ctrl/%/edit'] = array(
+      'title' => 'Edit Vocabulary',
+      'type' => MENU_CALLBACK,
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('wisski_vocab_ctrl_admin_edit', 4),
+      'access arguments' => array('wisski administrate page'),
+      'file' => 'wisski_vocab_ctrl.admin.inc',
+      );
+  $items['admin/settings/wisski/vocab_ctrl/%/delete'] = array(
+      'title' => 'Delete Vocabulary',
+      'type' => MENU_CALLBACK,
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('wisski_vocab_ctrl_admin_delete', 4),
+      'access arguments' => array('wisski administrate page'),
+      'file' => 'wisski_vocab_ctrl.admin.inc',
+      );
+  $items['admin/settings/wisski/vocab_ctrl/clone/%'] = array(
+      'title' => 'Clone Vocabulary',
+      'type' => MENU_CALLBACK,
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('wisski_vocab_ctrl_admin_edit', NULL, 5),
+      'access arguments' => array('wisski administrate page'),
+      'file' => 'wisski_vocab_ctrl.admin.inc',
+      );
+  $items['wisski/vocab_ctrl/edit/js/%'] = array(
+      'type' => MENU_CALLBACK,
+      'page callback' => 'wisski_vocab_ctrl_admin_edit_js',
+      'page arguments' => array(4),
+      'access arguments' => array('wisski administrate page'),
+      'file' => 'wisski_vocab_ctrl.admin.inc',
+      );
+  $items['wisski/vocab_ctrl/edit/js/%/%'] = array(
+      'type' => MENU_CALLBACK,
+      'page callback' => 'wisski_vocab_ctrl_admin_edit_js',
+      'page arguments' => array(4, 5),
+      'access arguments' => array('wisski administrate page'),
+      'file' => 'wisski_vocab_ctrl.admin.inc',
+      );
+  $items['wisski/vocab_ctrl/index_cron'] = array(
+      'type' => MENU_CALLBACK,
+      'page callback' => 'wisski_vocab_ctrl_admin_check_reindex',
+      'page arguments' => array(4, 5),
+      'access arguments' => array('wisski use editor'),
+      'file' => 'wisski_vocab_ctrl.admin.inc',
+      );
+  return $items;
+
+}
+
+
+
+/** Implementation of hook_init */
+function wisski_vocab_ctrl_init() {
+  
+  if (variable_get('wisski_vocab_ctrl_last_reindex', 0) + 36000 < time()) {
+    variable_set('wisski_vocab_ctrl_needs_reindex', TRUE);
+  }
+  wisski_vocab_ctrl_check_reindex(FALSE);
+
+}
+
+
+/**Determine whether or not to set an ajax call to get
+* a reindexing of vocabulary entries done.
+*/
+function wisski_vocab_ctrl_check_reindex($set = FALSE) {
+
+  if ($set) variable_set('wisski_vocab_ctrl_needs_reindex', TRUE);
+
+  static $checked = FALSE;
+  if ($checked) return;
+
+  // implement a cron like callback
+  // to trigger reindexing
+  if (variable_get('wisski_vocab_ctrl_needs_reindex', FALSE)) {
+    global $base_root, $base_path;
+    $ajax = '$.ajax({url : "' . $base_root . $base_path . 'wisski/vocab_ctrl/index_cron", ';
+    $ajax .= 'type : "GET", timeout : 200, success : function () {}});';
+    drupal_add_js($ajax, 'inline');
+
+    $checked = TRUE;
+  }
+
+}
+
+
+
+
+/*============================================ *
+*  VOCABULARIES
+* ============================================ *
+* Functions dealing with vocabulary objects & definitions
+*/
+
+
+/** Get information about one or multilpe vocabularies
+*
+* @parameter $refresh delete the vocab object cache.
+*   Use this after saving vocab objects.
+*
+* @return depends upon arguments
+* - if $vid and $prop are set, returns the value of field/member $prop for
+*   vocabulary with id $vid
+* - if $vid is set, returns the vocabulary object with id $vid
+* - if $vid is NULL, return a list of all vocabulary objects
+*
+* A vocabulary object contains
+* - vid: the id
+* - name: the human-readable name
+* - aid: the id of the accesspoint that this vocab gets the data from
+* - priority: a priority integer; the higher the better
+* - group_id: the id of the group that the instances of this vocab
+*   are mapped to
+* - fields: assoc array defining the mapping between vocab fields and paths
+* - indices: assoc array with indexing settings
+*/
+function wisski_vocab_ctrl_get($vid = NULL, $prop = NULL, $refresh = NULL) {
+  include_once('wisski_vocab_ctrl.inc');
+  return _wisski_vocab_ctrl_get($vid, $prop, $refresh);
+}
+
+
+/** Save a vocabulary object to db
+* If not set, an id will be added.
+*/
+function wisski_vocab_ctrl_save(&$voc) {
+  include_once('wisski_vocab_ctrl.inc');
+  return _wisski_vocab_ctrl_save($voc);
+}
+
+
+/**Delete a vocab object from db
+*/
+function wisski_vocab_ctrl_delete($vid) {
+  include_once('wisski_vocab_ctrl.inc');
+  return _wisski_vocab_ctrl_delete($vid);
+}
+
+
+/** Generate all triples that should be imported to local triple store
+* for instance $term_uri.
+* Use this function if you want to refer to instance $term_uri in local data.
+* It will create nodes for each instance etc.
+*
+* This function used to return all triples but now it directly saves it
+* to the WissKI default graph.
+*
+* @return an empty array
+*/
+function wisski_vocab_ctrl_get_triples($vid, $term_uri) {
+  include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
+  return _wisski_vocab_ctrl_get_triples($vid, $term_uri);
+}
+
+
+/**
+*/
+function wisski_vocab_ctrl_get_path_array($voc, $field) {
+  include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
+  return _wisski_vocab_ctrl_get_path_array($voc, $field);
+}
+
+
+/** Checks whether instance $uri of vocab $vid has already been imported
+* via wisski_vocab_ctrl_get_triples()
+*/
+function wisski_vocab_ctrl_is_imported($vid, $uri) {
+  include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
+  return _wisski_vocab_ctrl_is_imported($vid, $uri);
+}
+
+
+/** Implementation of hook_nodeapi
+*
+* Initiates a reindex after individual node has been added/edited
+*/
+function wisski_vocab_ctrl_nodeapi(&$node, $op, $a, $b) {
+  if (($op == 'insert' || $op == 'update') && $node->type == 'individual') {
+    if (variable_get('wisski_vocab_ctrl_last_reindex', 0) + 300 < time()) { // do a reindex at max every 5 min
+      include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
+      wisski_vocab_ctrl_check_reindex(TRUE);
+    }
+  }
+}
+
+
+
+
+/*============================================ *
+*  FIELDS
+* ============================================ *
+* Functions dealing with field arrays & definitions
+*
+* Fields are used to define the mapping between the vocabulary data
+* and the paths in WIssKI.
+* 
+* Some fields are used to identify special semantics (like labels, coordintes)
+* and will be used by other components.
+* 
+*/
+
+
+/** Get information for one or more fields
+* @return depending on args (semantics see wisski_vocab_ctrl_get())
+*
+* A field array contains
+* - fid: field id
+* - name: the human-readable name
+* - origin: where the field was defined: 'built-in' or 'user'
+* - target_type: the type of the target value:
+*   a 'literal' or 'same_class' as source instance
+* - description: a description of the field
+*/
+function wisski_vocab_ctrl_field_get($fid = NULL, $col = NULL) {
+
+  $fields = array(
+    'label' => array(
+      'fid' => 'label',
+      'origin' => 'built-in',
+      'name' => t('Label'),
+      'target_type' => 'literal', 
+      'description' => t('The strings that this thing is typically referred to with. If a distinction between preferred and alternate labels is made, this field should be used for preferred labels.'),
+    ),
+    'alt_label' => array(
+      'fid' => 'alt_label',
+      'origin' => 'built-in',
+      'name' => t('Alternate Label'),
+      'target_type' => 'literal',
+      'description' => t('If a distinction between preferred and alternate labels is made, this field should be used for alternate labels.'),
+    ), 
+    'broader' => array(
+      'fid' => 'broader',
+      'origin' => 'built-in',
+      'name' => t('Broader'),
+      'target_type' => 'same_class',
+      'description' => t('This relation points to things that are somehow referred to as being "broader"'),
+    ), 
+    'narrower' => array(
+      'fid' => 'narrower',
+      'origin' => 'built-in',
+      'name' => t('Narrower'),
+      'target_type' => 'same_class',
+      'description' => t('This relation points to things that are somehow referred to as being "narrower"'),
+    ),
+  );
+  
+  if (!$fid || !isset($fields[$fid])) {
+    $rows = db_query('SELECT * FROM {wisski_vocab_ctrl_fields}');
+    while ($row = db_fetch_array($rows)) {
+      $fields[$row['fid']] = $row;
+    }
+  }
+  
+  if (!$fid) {
+    return $fields;
+  } elseif (!isset($fields[$fid])) {
+    return NULL;
+  } elseif (!$col) {
+    return $fields[$fid];
+  } elseif (!isset($fields[$fid][$col])) {
+    return NULL;
+  } else {
+    return $fields[$fid][$col];
+  }
+
+}
+
+
+/** Save a field to db*/
+function wisski_vocab_ctrl_field_set($field) {
+
+  if (wisski_vocab_ctrl_field_get($field['fid'])) {
+    // update
+    drupal_write_record('wisski_vocab_ctrl_fields', $field, 'fid');
+  } else {
+    // insert
+    drupal_write_record('wisski_vocab_ctrl_fields', $field);
+  }
+  
+}
+
+
+/*Delete a field from db*/
+function wisski_vocab_ctrl_field_delete($fid) {
+  db_query("DELETE FROM {wisski_vocab_ctrl_fields} WHERE fid = '%s'", $fid);
+}
+
+
+
+/*============================================ *
+*  MAPPINGS
+* ============================================ *
+* Functions dealing with mapping arrays & definitions
+*
+* Mappings are used to define queries for non-local triple stores that can then
+* be associated with a field and mapped to local paths.
+* As currently only sparql endpoints can be queried, a mapping always consists
+* of a sparql select query that has 2 vars: 'source' for the instance uri and
+* 'target' for the field value.
+* A mapping may also define a regex so that the part of target that does not
+* match the regex will be stripped (only the match will be set as target value)
+* 
+*/
+
+
+/** Get information about one or multiple mappings
+*
+* @return depends on args (for semantics see wisski_vocab_ctrl_get())
+*/
+function wisski_vocab_ctrl_mapping_get($mid = NULL, $col = NULL) {
+  
+  $mappings = array();
+  $rows = db_query('SELECT * FROM {wisski_vocab_ctrl_mappings}' . (($mid) ? " WHERE mid = %d" : ''), $mid);
+  while ($row = db_fetch_array($rows)) {
+      $mappings[$row['mid']] = $row;
+  }
+  
+  if (!$mid) {
+    return $mappings;
+  } elseif (!isset($mappings[$mid])) {
+    return NULL;
+  } elseif (!$col) {
+    return $mappings[$mid];
+  } elseif (!isset($mappings[$mid][$col])) {
+    return NULL;
+  } else {
+    return $mappings[$mid][$col];
+  }
+
+}
+
+
+/** Save a mapping to db
+*/
+function wisski_vocab_ctrl_mapping_set($mapping) {
+
+  if (wisski_vocab_ctrl_mapping_get($mapping['mid'])) {
+    // update
+    drupal_write_record('wisski_vocab_ctrl_mappings', $mapping, 'mid');
+  } else {
+    // insert
+    drupal_write_record('wisski_vocab_ctrl_mappings', $mapping);
+  }
+  
+}
+
+
+/** delete a mapping*/
+function wisski_vocab_ctrl_mapping_delete($mid) {
+  db_query("DELETE FROM {wisski_vocab_ctrl_mappings} WHERE mid = '%s'", $mid);
+}
+
+
+
+/*============================================ *
+*  VOCABULARY ACCESS
+* ============================================ */
+
+
+
+/** Search a vocabulary.
+*
+* @parameter $fids the fields that shall be searched (the ids)
+*   This method accepts special fields:
+*   - labels: expands to all label fields (currently label and alt_label)
+*   - broader_labels: returns an array of labels of broader terms
+* @parameter $voc the vocabulary that shall be searched; id or object
+* @parameter $source if non-NULL, search information about that instance.
+*   The values of fields $fids for instance $source are gathered and returned.
+*   $target must be NULL.
+* @parameter $target if non-NULL, search instances with value $target in
+*   fields $fids. This is the typical term lookup setting.
+*   $source must be NULL.
+* @parameter $limit if set, the maximum return set cardinality
+* @parameter $offset if set, discard $offset heading return sets
+*   (use with $limit like in SQL, SPARQL)
+* @parameter $match_mode How precise $target must match the actual value.
+*   This only applies to $target's that are literals. Supported are
+*   'exact', 'contains', 'starts_word', 'contains_word' and 'regex'.
+* @parameter $use_index whether an index shall be used for lookup. Indexing may
+*   speed up lookup time but may retrieve outdated data on dynamic sparql
+*   endpoints. Supports 'always', 'never' and 'normal'.
+*   'never' will always search on real data. 'always' will search on index data
+*   only. If no index is defined, it will return emtpy set! 'normal' will
+*   prefer index data but fall back to real data if not defined.
+*   Indexes can currently only be defined for labels fields.
+*
+* @return assoc array keys being the found source/term URIs and the values
+*   being an array where each key is a field id mapped to a list of values.
+*   E.g.
+*   array(
+*     <uri1> => array(
+*       <field1> => array(<value11>, <value12>, ...),
+*       <field2> => array(<value21>, ...),
+*     <uri2> => array(...)
+*   )
+*   <value**> is again an array containing
+*   - value: the actual value (a string)
+*   - target type: the value type; 'literal' or 'uri' (see ARC structures)
+*   - target lang: the rdf language (if literal)
+*   - target datatype: the rdf datatype (if literal)
+*   If <field*> is 'broader_labels' then the value array will be of form
+*   array('broader label 1', 'broader label 2', ..., 'top label')
+*     
+*/
+function wisski_vocab_ctrl_lookup($fids, $voc, $source, $target, $limit = NULL, $offset = NULL, $match_mode = 'exact', $use_index = 'normal') {
+  include_once('wisski_vocab_ctrl.inc');
+  $ret = _wisski_vocab_ctrl_lookup($fids, $voc, $source, $target, $limit, $offset, $match_mode, $use_index);
+  return $ret;
+}
+
+
+
+/** Write log info to a file
+* TODO: should be in wisski module or deleted
+*/
+function wisski_log() {
+  $args = func_get_args();
+  foreach ($args as $arg) {
+    file_put_contents("/tmp/mswisski.log", "[" . date(DATE_ISO8601) . "] " . print_r($arg,true) . "\n", FILE_APPEND);
+  }
+}
+  
+
+
