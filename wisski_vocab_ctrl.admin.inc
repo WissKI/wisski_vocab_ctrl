@@ -426,7 +426,7 @@ function wisski_vocab_ctrl_admin_delete(&$form_state, $vid) {
 
   include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
 
-  $data = wisski_vocab_ctrl_get_metadata($vid);
+  $data = wisski_vocab_ctrl_get($vid);
 
   $form = array(
       'vid' => array('#type' => 'value', '#value' => $vid),
@@ -453,7 +453,7 @@ function wisski_vocab_ctrl_admin_delete_submit($form, &$form_state) {
 
   include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
 
-  wisski_vocab_ctrl_delete_metadata($form_state['values']['vid']);
+  wisski_vocab_ctrl_delete($form_state['values']['vid']);
 
   $form_state['redirect'] = 'admin/settings/wisski/vocab_ctrl';
 
