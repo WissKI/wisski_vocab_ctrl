@@ -456,6 +456,9 @@ function _wisski_vocab_ctrl_lookup_direct($fid, $voc, $source, $target, $limit, 
   if ($offset) $sparql .= "OFFSET $offset \n";
   $rows = $voc->store->query($sparql, 'rows');
   if ($voc->store->getErrors()) {
+    foreach ($voc->store->getErrors() as $e) {
+      watchdog('wisski_vocab', check_plain($e), array(), WATCHDOG_WARNING);
+    }
     return array();
   }
     
