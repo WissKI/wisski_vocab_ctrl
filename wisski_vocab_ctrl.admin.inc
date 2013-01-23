@@ -854,3 +854,195 @@ function wisski_vocab_ctrl_admin_mapping_settings_submit($form, $form_state) {
 }
 
 
+/*============================================ *
+*  MAPPINGS
+* ============================================ */
+
+
+function wisski_vocab_ctrl_admin_cron_indexing() {
+  
+  $vocs = wisski_vocab_ctrl_get();
+  $fields = wisski_vocab_ctrl_field_get();
+  
+  // vocs are only indexable with cron if they have indexing enabled
+  // and they do not automatically refresh (avoid interference with
+  // normal indexing routine (TODO this should be possible eventually)
+  // note: all local vocs do refresh, so they cannot be indexed with cron
+  $indexable_vocs = array();
+  foreach ($vocs as $voc) {
+    if ($voc->indices['enabled'] && $voc->indices['refresh_interval'] == 0) {
+      $indexable_vocs[$voc->vid] = $voc->name;
+    }
+  }
+  
+  // section for adding a new task
+  $form = array();
+  $form['adv_idx_info'] = array(
+    '#type' => 'markup',
+    '#value' => t('The normal indexing methods can lead to complications when indexing big vocabularies. Use advanced indexing to better control the indexing process.'),
+    '#prefix' => '<p>',
+    '#suffix' => '<p>',
+    '#weight' => 0,
+  );
+  $form['add_task'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Add indexing task'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+    '#weight' => 10,
+    '#description' => t(
+        'An indexing task indexes a vocabulary in subsequent steps that are triggered by cron. You can also !run.',
+        array('!run' => l(
+            t('run cron manually'),
+            'admin/reports/status/run-cron',
+            array('query' => array('destination' => 'admin/settings/wisski/vocab_ctrl/cron_indexing')))
+        )
+    ),
+  );
+  $form['add_task']['vid'] = array(
+    '#type' => 'select',
+    '#title' => t('Vocabulary'),
+    '#options' => $indexable_vocs,
+    '#weight' => 10,
+  );
+  $form['add_task']['limit'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Limit per run'),
+    '#description' => t('The maximum number of instances that get indexed per step/cron run. Depending on the endpoint\'s performance and server timeout settings this value may be increased or decreased.'),
+    '#default_value' => 2000,
+    '#weight' => 15,
+  );
+  $form['add_task']['immediately'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Run immediately'),
+    '#description' => t('Number of times the task is run directly after creation. Can be used if you don\'t want to wait for cron to run.'),
+    '#default_value' => '1',
+    '#field_suffix' => t('times'),
+    '#weight' => 30,
+  );
+  $form['add_task']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Add indexing task'),
+    '#weight' => 50,
+  );
+  
+  // rpint status msgs
+
+  $form['status'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Status'),
+    '#weight' => 50,
+  );
+  $form['status']['active'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Active tasks'),
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+    '#weight' => 10,
+  );
+  $form['status']['terminated'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Terminated tasks'),
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+    '#weight' => 50,
+  );
+
+  // compile stats for tasks
+  // this could actually be a table
+  $rebuilds = variable_get('wisski_vocab_ctrl_index_rebuilds', array());
+  $vid_reb = array();
+  foreach ($rebuilds as $k => $task) $vid_reb[$task['vid']] = $k;
+
+  foreach ($vocs as $voc) {
+    $stat = NULL;
+    $task = NULL;
+    $weight = 0;
+    $active = FALSE;
+
+    // determine whether we have completed or active stats for this voc
+    // each voc has max one task! either a completed task or an active one
+    if (isset($vid_reb[$voc->vid])) {
+      //active
+      $task = $rebuilds[$vid_reb[$voc->vid]];
+      $stat = $task['stat'];
+      $weight = $vid_reb[$voc->vid];
+      $active = TRUE;
+    } else {
+      $stat = variable_get('wisski_vocab_ctrl_index_stat_' . $voc->vid, NULL);
+      $weight = $voc->priority;
+    }
+
+    if (empty($stat)) continue; // voc has no tasks whatsoever
+
+    $stat_str = '<ul>';
+    $stat_str .= '<li>' . t('Started at %t', array('%t' => date(DATE_ISO8601, $stat['init_time']))) . '</li>';
+    $stat_str .= '<li>' . t('%t runs', array('%t' => $stat['run_count'])) . '</li>';
+    foreach ($stat['counts'] as $fid => $field_count) {
+      if (!isset($fields[$fid])) {
+        $stat_str .= t('<li>Field %f: unknown field ID</li>', array('%f' => $fid));
+      } else {
+        $stat_str .= '<li>' . t('Field %f: %i instances, %l labels %c', array(
+            '%f' => $fields[$fid]['name'],
+            '%i' => $field_count['instance'],
+            '%l' => $field_count['label'],
+            // in case of an active task, specify whether field is being indexed now
+            '%c' => empty($task) ? '' : ((in_array($fid, $task['fids'])) ? t('(ongoing)') : t('(completed)')),
+            )) . '</li>';
+      }
+    }
+    if (!empty($task)) {
+      // only active stats
+      if (!isset($fields[$fid])) {
+        $stat_str .= t('<li>Field %f: unknown field ID</li>', array('%f' => $fid));
+      } else {
+        foreach(array_slice($task['fids'], 1) as $fid) {
+          $stat_str .= '<li>' . t('Field %f: yet to be indexed', array('%f' => $fields[$fid]['name'])) . '</li>';
+        }
+      }
+      $stat_str .= '<li>' . l(t('Stop task'), 'admin/settings/wisski/vocab_ctrl/stop_cron_indexing/' . $voc->vid) . '</li>';
+    } else {
+      // only terminated stats
+      $stat_str .= '<li>' . t('Finished at %t', array('%t' => date(DATE_ISO8601, $stat['finish_time']))) . '</li>';
+      $stat_str .= '<li>' . t('Terminating status: %s', array('%s' => htmlentities($stat['term_status']))) . '</li>';
+    }
+    $stat_str .= '</ul>';
+
+    $form['status'][$active ? 'active' : 'terminated']['fs_vid' . $voc->vid] = array(
+      '#type' => 'fieldset',
+      '#title' => htmlentities($voc->name),
+      '#collapsible' => TRUE,
+    );
+    $form['status'][$active ? 'active' : 'terminated']['fs_vid' . $voc->vid]['mu_vid' . $voc->vid] = array(
+      '#type' => 'markup',
+      '#value' => $stat_str,
+    );
+
+  }
+  
+  return $form;
+
+}
+
+
+
+function wisski_vocab_ctrl_admin_cron_indexing_validate($form, $form_state) {
+  
+  if (!preg_match('/^\d+$/', $form_state['values']['limit'])) {
+    form_set_error('limit', t('Only integer values allowed'));
+  }
+  if (!preg_match('/^\d+$/', $form_state['values']['immediately'])) {
+    form_set_error('immediately', t('Only integer values allowed'));
+  }
+
+}
+
+
+function wisski_vocab_ctrl_admin_cron_indexing_submit($form, $form_state) {
+  
+  $v = $form_state['values'];
+  include_once('wisski_vocab_ctrl.inc');
+  _wisski_vocab_ctrl_index_rebuilds_init_task($v['vid'], $v['limit'], NULL, $v['immediately']);
+
+}
+
