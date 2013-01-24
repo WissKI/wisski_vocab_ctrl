@@ -920,6 +920,13 @@ function wisski_vocab_ctrl_admin_cron_indexing() {
     '#field_suffix' => t('times'),
     '#weight' => 30,
   );
+  $form['add_task']['disable_timeout'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Disable timeout'),
+    '#description' => t('Disable the PHP execution timeout. Note that depending on your server\'s configuration, changeing the timeout may not be allowed.'),
+    '#default_value' => '1',
+    '#weight' => 40,
+  );
   $form['add_task']['submit'] = array(
     '#type' => 'submit',
     '#value' => t('Add indexing task'),
@@ -978,6 +985,9 @@ function wisski_vocab_ctrl_admin_cron_indexing() {
     $stat_str = '<ul>';
     $stat_str .= '<li>' . t('Started at %t', array('%t' => date(DATE_ISO8601, $stat['init_time']))) . '</li>';
     $stat_str .= '<li>' . t('%t runs', array('%t' => $stat['run_count'])) . '</li>';
+    // timout only for active tasks
+    if (!empty($task)) $stat_str .= '<li>' . t('Timeout: %t', array('%t' => $task['timeout'] ? t('enabled') : t('disabled'))) . '</li>';
+    // fields progress
     foreach ($stat['counts'] as $fid => $field_count) {
       if (!isset($fields[$fid])) {
         $stat_str .= t('<li>Field %f: unknown field ID</li>', array('%f' => $fid));
@@ -1042,7 +1052,16 @@ function wisski_vocab_ctrl_admin_cron_indexing_submit($form, $form_state) {
   
   $v = $form_state['values'];
   include_once('wisski_vocab_ctrl.inc');
-  _wisski_vocab_ctrl_index_rebuilds_init_task($v['vid'], $v['limit'], NULL, $v['immediately']);
+  _wisski_vocab_ctrl_index_rebuilds_init_task($v['vid'], $v['limit'], NULL, $v['immediately'], !$v['disable_timeout']);
 
 }
 
+
+function wisski_vocab_ctrl_admin_cron_indexing_stop($vid) {
+  
+  include_once('wisski_vocab_ctrl.inc');
+  _wisski_vocab_ctrl_index_rebuilds_stop($vid);
+
+  drupal_goto('admin/settings/wisski/vocab_ctrl/cron_indexing');
+
+}

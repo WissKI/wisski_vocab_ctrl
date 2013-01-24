@@ -746,7 +746,7 @@ function _wisski_vocab_ctrl_create_labels_index_step($voc, $fid, $offset, $limit
   
 
 
-function _wisski_vocab_ctrl_index_rebuilds_init_task($vid, $limit, $fids = NULL, $do_immediately = 0) {
+function _wisski_vocab_ctrl_index_rebuilds_init_task($vid, $limit, $fids = NULL, $do_immediately = 0, $timeout = TRUE) {
   
   // defaults to label fids
   // TODO should get from somewhere, what fields are label fields
@@ -772,6 +772,7 @@ function _wisski_vocab_ctrl_index_rebuilds_init_task($vid, $limit, $fids = NULL,
     'fids' => $fids,
     'offset' => 0,
     'limit' => $limit,
+    'timeout' => $timeout,
   );
   $task['stat']['counts'][$task['fids'][0]]['label'] = 0;
   $task['stat']['counts'][$task['fids'][0]]['instance'] = 0;
@@ -835,7 +836,15 @@ function _wisski_vocab_ctrl_index_rebuilds_exec_task($rebuilds = NULL) {
     }
     return $rebuilds;
   }
+  
+  // unset timeout if possible
+  if (!$task['timeout'] && !ini_get('safe_mode')) {
+    set_time_limit(0);
+  }
+
+  // do the indexing
   $stat = _wisski_vocab_ctrl_create_labels_index_step($voc, $task['fids'][0], $task['offset'], $task['limit']);
+
   // adjust the task
 
   // save stats
