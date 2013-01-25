@@ -50,7 +50,10 @@ function wisski_vocab_ctrl_schema () {
       'value_lang_fid' => array(array('value', 100), 'lang', 'fid'),
       'value_fid' => array(array('value', 100), 'fid'),
       'lang_fid' => array('lang', 'fid'),
-    ),
+      'fid' => array('fid'),
+      'vid' => array('vid'),
+      'fid_vid_value' => array('fid', 'vid', array('value', 100)),
+      ),
   );
 
   
