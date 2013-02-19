@@ -75,7 +75,7 @@ function wisski_vocab_ctrl_menu () {
       'file' => 'wisski_vocab_ctrl.admin.inc',
       'weight' => 10,
       );
-  $items['admin/settings/wisski/vocab_ctrl/cron_indexing'] = array(
+  $items['admin/settings/wisski/vocab_ctrl/adv_indexing'] = array(
       'title' => 'Advanced Indexing',
       'type' => MENU_LOCAL_TASK,
       'page callback' => 'drupal_get_form',
@@ -84,11 +84,27 @@ function wisski_vocab_ctrl_menu () {
       'file' => 'wisski_vocab_ctrl.admin.inc',
       'weight' => 50,
       );
-  $items['admin/settings/wisski/vocab_ctrl/stop_cron_indexing/%'] = array(
-      'title' => 'Stop Indexing',
+  $items['admin/settings/wisski/vocab_ctrl/adv_indexing/%/stop'] = array(
+      'title' => 'Indexing Task',
       'type' => MENU_CALLBACK,
-      'page callback' => 'wisski_vocab_ctrl_admin_cron_indexing_stop',
-      'page arguments' => array(5),
+      'page callback' => 'wisski_vocab_ctrl_admin_cron_indexing_op',
+      'page arguments' => array(5,6),
+      'access arguments' => array('wisski administrate page'),
+      'file' => 'wisski_vocab_ctrl.admin.inc',
+      );
+  $items['admin/settings/wisski/vocab_ctrl/adv_indexing/%/resume'] = array(
+      'title' => 'Indexing Task',
+      'type' => MENU_CALLBACK,
+      'page callback' => 'wisski_vocab_ctrl_admin_cron_indexing_op',
+      'page arguments' => array(5,6),
+      'access arguments' => array('wisski administrate page'),
+      'file' => 'wisski_vocab_ctrl.admin.inc',
+      );
+  $items['admin/settings/wisski/vocab_ctrl/adv_indexing/%/delete'] = array(
+      'title' => 'Indexing Task',
+      'type' => MENU_CALLBACK,
+      'page callback' => 'wisski_vocab_ctrl_admin_cron_indexing_op',
+      'page arguments' => array(5,6),
       'access arguments' => array('wisski administrate page'),
       'file' => 'wisski_vocab_ctrl.admin.inc',
       );
@@ -507,9 +523,9 @@ function wisski_vocab_ctrl_mapping_delete($mid) {
 *   array('broader label 1', 'broader label 2', ..., 'top label')
 *     
 */
-function wisski_vocab_ctrl_lookup($fids, $voc, $source, $target, $limit = NULL, $offset = NULL, $match_mode = 'exact', $use_index = 'normal') {
+function wisski_vocab_ctrl_lookup($fids, $voc, $source, $target, $limit = NULL, $offset = NULL, $match_mode = 'exact', $use_index = 'normal', $is_autocomp = FALSE) {
   include_once('wisski_vocab_ctrl.inc');
-  $ret = _wisski_vocab_ctrl_lookup($fids, $voc, $source, $target, $limit, $offset, $match_mode, $use_index);
+  $ret = _wisski_vocab_ctrl_lookup($fids, $voc, $source, $target, $limit, $offset, $match_mode, $use_index, $is_autocomp);
   return $ret;
 }
 

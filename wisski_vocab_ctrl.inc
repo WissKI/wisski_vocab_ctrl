@@ -113,21 +113,21 @@ function _wisski_vocab_ctrl_is_imported($vid, $term_uri) {
 
 function _wisski_vocab_ctrl_get_triples($vid, $term_uri) {
   global $base_root, $base_path;
-
+//  drupal_set_message("I'm alive");
   if (!$vid || !$term_uri) return FALSE;
-  
+//  drupal_set_message("I'm alive1");
   if (!is_object($vid)) {
     $voc = wisski_vocab_ctrl_get($vid);
   } else {
     $voc = $vid;
   }
   if (!$voc) return array();
-  
+//  drupal_set_message("I'm alive2");
   if (_wisski_vocab_ctrl_is_imported($voc, $term_uri)) {
     // the triples were already stored!
     return array();
   }
-
+//  drupal_set_message("I'm alive3");
   include_once(drupal_get_path('module', 'wisski_pathbuilder') . '/wisski_pathbuilder.inc');
   $group_path_array = _wisski_pathbuilder_calculate_group_samepart($voc->group_id);
   
@@ -230,7 +230,7 @@ function _wisski_vocab_ctrl_get_triples($vid, $term_uri) {
   $store = wisski_store_getObj()->wisski_ARCAdapter_getStore();
   $a = $store->insert($triples, wisski_store_getObj()->wisski_ARCAdapter_graphName());
   
-  return array();
+  return $triples;
 
 }
 
@@ -326,7 +326,7 @@ function _wisski_vocab_ctrl_build_sparql_query_pattern($path_data, $target_type,
 * ============================================ */
 
 
-function _wisski_vocab_ctrl_lookup($fids, $voc, $source, $target, $limit, $offset, $match_mode, $use_index) {
+function _wisski_vocab_ctrl_lookup($fids, $voc, $source, $target, $limit, $offset, $match_mode, $use_index, $is_autocomp = false) {
   
   $args = func_get_args();
   array_shift($args);
@@ -356,7 +356,7 @@ function _wisski_vocab_ctrl_lookup($fids, $voc, $source, $target, $limit, $offse
     return call_user_func_array("_wisski_vocab_ctrl_lookup_field_$fid", $args);
   }
   if (in_array($fid, $label_fields)) {
-    return _wisski_vocab_ctrl_lookup_field_labels($fid, $voc, $source, $target, $limit, $offset, $match_mode, $use_index);
+    return _wisski_vocab_ctrl_lookup_field_labels($fid, $voc, $source, $target, $limit, $offset, $match_mode, $use_index, $is_autocomp);
   }
 
 
@@ -428,6 +428,10 @@ function _wisski_vocab_ctrl_lookup_direct($fid, $voc, $source, $target, $limit, 
           $target = "^$target$|^$target$wb.*|.*$wb$target$wb.*|.*$wb$target$";
           $sparql .= '    FILTER (regex(?target, "' . $target . '", "i")) ' . "\n";
           break;
+        case 'starts':
+          $target = "$target.*";
+          $sparql .= '    FILTER (regex(?target, "' . $target . '", "i")) ' . "\n";
+          break;
         case 'starts_word':
           $wb = "[-\\s,'\\/.]";
           $target = "^$target.*|.*$wb$target.*";
@@ -490,8 +494,7 @@ function _wisski_vocab_ctrl_lookup_direct($fid, $voc, $source, $target, $limit, 
 
 
 
-function _wisski_vocab_ctrl_lookup_field_labels($fid, $voc, $source, $target, $limit = NULL, $offset = NULL, $match_mode = 'exact', $use_index = 'normal') {
-  
+function _wisski_vocab_ctrl_lookup_field_labels($fid, $voc, $source, $target, $limit = NULL, $offset = NULL, $match_mode = 'exact', $use_index = 'normal', $is_autocomp = FALSE) {
 
   if ($use_index != 'never' && !$source && variable_get('wisski_vocab_ctrl_index_labels_' . $voc->vid, 'no') == 'indexed') {
     // the vocab is indexed
@@ -501,27 +504,32 @@ function _wisski_vocab_ctrl_lookup_field_labels($fid, $voc, $source, $target, $l
       case 'contains':
         $target = db_escape_string($target);
         $target = strtr($target, array('\\' => '\\\\', '%' => '\\%', '_' => '\\_'));
-        $q .= "value LIKE '%%$target%%'";
+        $q .= "value LIKE '%$target%'";
         break;
       case 'contains_word':
         $target = db_escape_string($target);
         $target = strtr($target, array('\\' => '\\\\', '%' => '\\%', '_' => '\\_'));
-        $q .= "(value = '$target' OR value LIKE '%% $target' OR value LIKE '%% $target %%' OR value LIKE '$target %%')";
+        $q .= "(value = '$target' OR value LIKE '% $target' OR value LIKE '% $target %' OR value LIKE '$target %')";
+        break;
+      case 'starts':
+        $target = db_escape_string($target);
+        $target = strtr($target, array('\\' => '\\\\', '%' => '\\%', '_' => '\\_'));
+        $q .= "value LIKE '$target%'";
         break;
       case 'starts_word':
         $target = db_escape_string($target);
         $target = strtr($target, array('\\' => '\\\\', '%' => '\\%', '_' => '\\_'));
-        $q .= "(value = '$target' OR value LIKE '$target%%')";
+        $q .= "(value = '$target' OR value LIKE '$target%')";
         break;
       default: // case 'exact':
         $target = db_escape_string($target);
         $q .= "value = '$target'";
         break;
     }
-    $q .= ' ORDER BY value, uri';
+    if(!$is_autocomp)
+      $q .= ' ORDER BY value, uri';
     if ($limit) $q .= " LIMIT %d";
     if ($offset) $q .= ' OFFSET %d';
-
     $rows = db_query($q, $limit, $offset);
     $results = array();
     while ($row = db_fetch_array($rows)) {
@@ -746,8 +754,7 @@ function _wisski_vocab_ctrl_create_labels_index_step($voc, $fid, $offset, $limit
   
 
 
-function _wisski_vocab_ctrl_index_rebuilds_init_task($vid, $limit, $fids = NULL, $do_immediately = 0, $timeout = TRUE) {
-  
+function _wisski_vocab_ctrl_index_rebuilds_init_task($vid, $limit, $fids = NULL, $do_immediately = 0, $timeout = TRUE, $max_retries = 1) {
   // defaults to label fids
   // TODO should get from somewhere, what fields are label fields
   if (empty($fids)) {
@@ -761,18 +768,23 @@ function _wisski_vocab_ctrl_index_rebuilds_init_task($vid, $limit, $fids = NULL,
   // delete former rebuild tasks for the same vocab
   // we obviously shall start over again
   foreach ($rebuilds as $k => $task) {
-    if ($task['vid'] == $vid) 
-      unset($rebuilds[$k]);
+    if ($task['vid'] == $vid && array_intersect($fids, $task['fids'])) {
+      drupal_set_message(t('Two active tasks are simultaneously indexing same field of same vocabulary. Please stop one task.'), 'error');
+      return;
+    }
   }
-  variable_set('wisski_vocab_ctrl_index_rebuilds', $rebuilds);
 
   // set up new task
   $task = array(
+    'tid' => wisski_get_uuid(),
     'vid' => $vid,
     'fids' => $fids,
     'offset' => 0,
+    'retries' => 0,
+    'max_retries' => $max_retries,
     'limit' => $limit,
     'timeout' => $timeout,
+    'status' => 'active',
   );
   $task['stat']['counts'][$task['fids'][0]]['label'] = 0;
   $task['stat']['counts'][$task['fids'][0]]['instance'] = 0;
@@ -782,38 +794,128 @@ function _wisski_vocab_ctrl_index_rebuilds_init_task($vid, $limit, $fids = NULL,
   // set rebuild state and delete old index from db
   variable_set("wisski_vocab_ctrl_index_labels_$vid", 'rebuild');
   variable_del('wisski_vocab_ctrl_index_stat_' . $vid);
-  db_query("DELETE FROM {wisski_vocab_ctrl_index} WHERE vid = %d", $vid);
+  foreach ($fids as $fid) {
+    db_query("DELETE FROM {wisski_vocab_ctrl_index} WHERE `vid` = %d and `fid` = '%s'", $vid, $fid);
+  }
 
   // run task now a couple of times (optionally)
   $local_rebuilds = array($task);
   for (;$do_immediately > 0 && !empty($local_rebuilds[0]['fids']); $do_immediately--) {
     $local_rebuilds = _wisski_vocab_ctrl_index_rebuilds_exec_task($local_rebuilds);
   }
-  
-  // add new task to bottom off task list if there is still something to do.
+  // add new task to bottom of task list if there is still something to do.
   if (!empty($local_rebuilds[0]['fids'])) {
     $rebuilds[] = $local_rebuilds[0];
     variable_set('wisski_vocab_ctrl_index_rebuilds', $rebuilds);
+  } else {
+    $term_rebuilds = variable_get('wisski_vocab_ctrl_index_rebuilds_terminated', array());
+    array_unshift($term_rebuilds, $local_rebuilds[0]);
+    variable_set('wisski_vocab_ctrl_index_rebuilds_terminated', $term_rebuilds);
   }
 
 }
 
 
-function _wisski_vocab_ctrl_index_rebuilds_stop($vid) {
+function _wisski_vocab_ctrl_index_rebuilds_stop($id) {
 
   $rebuilds = variable_get('wisski_vocab_ctrl_index_rebuilds', array());
-
-  foreach ($rebuilds as $k => $task) {
-    if ($task['vid'] == $vid) {
-      unset($rebuilds[$k]);
-      variable_set('wisski_vocab_ctrl_index_rebuilds', $rebuilds);
-      
-      $stat = $task['stat'];
-      $stat['term_status'] = 'stopped';
-      $stat['finish_time'] = time();
-      variable_set('wisski_vocab_ctrl_index_stat_' . $vid, $stat);
+  
+  $task = NULL;
+  $key = -1;
+  foreach ($rebuilds as $k => $t) {
+    if ($t['tid'] == $id) {
+      $task = $t;
+      $key = $k;
+      break;
     }
   }
+
+  if (!$key < 0) {
+    drupal_set_message(t('No indexing task with id %id.', array('%id' => $id)), 'error');
+    return;
+  }
+  
+  // remove task from active list
+  unset($rebuilds[$key]);
+  variable_set('wisski_vocab_ctrl_index_rebuilds', $rebuilds);
+
+  // add it to list of finished tasks
+  $term_rebuilds = variable_get('wisski_vocab_ctrl_index_rebuilds_terminated', array());
+  
+  $task['status'] = 'stopped';
+  $task['stat']['finish_time'] = time();
+  array_unshift($term_rebuilds, $task);
+  variable_set('wisski_vocab_ctrl_index_rebuilds_terminated', $term_rebuilds);
+
+}
+
+
+function _wisski_vocab_ctrl_index_rebuilds_delete($id) {
+
+  $rebuilds = variable_get('wisski_vocab_ctrl_index_rebuilds', array());
+  $term_rebuilds = variable_get('wisski_vocab_ctrl_index_rebuilds_terminated', array());
+  
+  foreach ($rebuilds as $k => $t) {
+    if ($t['tid'] == $id) {
+      unset($rebuilds[$k]);
+      variable_set('wisski_vocab_ctrl_index_rebuilds', $rebuilds);
+      return;
+    }
+  }
+  foreach ($term_rebuilds as $k => $t) {
+    if ($t['tid'] == $id) {
+      unset($term_rebuilds[$k]);
+      variable_set('wisski_vocab_ctrl_index_rebuilds_terminated', $term_rebuilds);
+      return;
+    }
+  }
+  drupal_set_message(t('No indexing task with id %id.', array('%id' => $id)), 'error');
+
+}
+
+
+function _wisski_vocab_ctrl_index_rebuilds_resume($id) {
+
+  $rebuilds = variable_get('wisski_vocab_ctrl_index_rebuilds', array());
+  $term_rebuilds = variable_get('wisski_vocab_ctrl_index_rebuilds_terminated', array());
+  
+  $task = NULL;
+  $key = -1;
+  foreach ($term_rebuilds as $k => $t) {
+    if ($t['tid'] == $id) {
+      $task = $t;
+      $key = $k;
+      break;
+    }
+  }
+
+  if ($key < 0) {
+    drupal_set_message(t('No indexing task with id %id.', array('%id' => $id)), 'error');
+    return;
+  }
+
+  // remove task from terminated list
+  unset($term_rebuilds[$key]);
+  variable_set('wisski_vocab_ctrl_index_rebuilds_terminated', $term_rebuilds);
+
+  if ($task['status'] == 'finished') {
+    // if we want to resume a finished task, we need to restore the last
+    // field from the statistics
+    $fid = array_pop(array_keys($task['stat']['counts']));
+    if (!$fid) {
+      drupal_set_message(t('Unable to resume indexing task.', 'error'));
+      return;
+    }
+    $task['fids'] = array($fid);
+    // reset retries, as this this could be the reason for the task to have terminated
+    $task['retries'] = 0;
+  }
+  $task['status'] = 'active';
+  unset($task['stat']['finish_time']);
+  
+  // add it to list of active tasks
+  $rebuilds[] = $task;
+  variable_set('wisski_vocab_ctrl_index_rebuilds', $rebuilds);
 
 }
 
@@ -822,14 +924,14 @@ function _wisski_vocab_ctrl_index_rebuilds_exec_task($rebuilds = NULL) {
   
   $is_local = $rebuilds != NULL;
   if ($rebuilds == NULL) $rebuilds = variable_get('wisski_vocab_ctrl_index_rebuilds', array());
-  if (empty($rebuilds)) return;
+  if (empty($rebuilds)) return array();
 
   // execute one task!
   $task = array_shift($rebuilds);
   $voc = wisski_vocab_ctrl_get($task['vid']);
   if (!$voc) {
     // this task is wrong and must be deleted
-    drupal_set_message(t('Indexing task refers to non-existent vocabulary; vid: %vid', array('vid' => $task['vid'])));
+    drupal_set_message(t('Indexing task refers to non-existent vocabulary with id: %vid', array('vid' => $task['vid'])));
     // store the new agenda if we retrieved it from db
     if (!$is_local) {
       variable_set('wisski_vocab_ctrl_index_rebuilds', $rebuilds);
@@ -851,39 +953,62 @@ function _wisski_vocab_ctrl_index_rebuilds_exec_task($rebuilds = NULL) {
   $task['stat']['counts'][$task['fids'][0]]['label'] += $stat['label_count'];
   $task['stat']['counts'][$task['fids'][0]]['instance'] += $stat['instance_count'];
   $task['stat']['run_count']++;
+  
+  // decide what to do next:
+  
+  if ($stat['label_count'] == 0 && $task['retries'] < $task['max_retries']) {
+    // if no triples where indexed this could mean
+    // a) there are no more triples
+    // b) some kind of error occured (eg. timeout). in this case we may retry later
+    // this is b). Just increase the retry counter
+    $task['retries']++;
 
-  // if there are still labels to index
-  if ($stat['instance_count'] < $task['limit']) {
-    // if we are done with one label, go to the next
+  } elseif ($stat['label_count'] < $task['limit']) {
+    // this field is finished; this subsumes option a), see above
     $fids = $task['fids'];
     array_shift($fids);
     $task['fids'] = $fids;
-    $task['offset'] = 0;
-    $task['stat']['counts'][$task['fids'][0]]['label'] = 0;
-    $task['stat']['counts'][$task['fids'][0]]['instance'] = 0;
+    if (!empty($fids)) {
+      $task['retries'] = 0;
+      $task['offset'] = 0;
+      $task['stat']['counts'][$task['fids'][0]]['label'] = 0;
+      $task['stat']['counts'][$task['fids'][0]]['instance'] = 0;
+    }
   } else {
-    // next portion of same label
+    // next portion of same field
     $task['offset'] += $task['limit'];
   }
 
-  // push the task back on top of rebuild agenda
   if (!empty($task['fids'] )) {
+    // still something to do => push the task back on top of rebuild agenda
     array_unshift($rebuilds, $task);
+    
+    // store the new agenda only if we retrieved it from db
+    if (!$is_local) {
+      variable_set('wisski_vocab_ctrl_index_rebuilds', $rebuilds);
+    }
+
+    return $rebuilds;
+
   } else {
     // or finish task, vocab is fully indexed
     $task['stat']['finish_time'] = time();
-    $task['stat']['term_status'] = 'finished';
+    $task['status'] = 'finished';
     variable_set("wisski_vocab_ctrl_index_labels_" . $task['vid'], 'indexed');
     variable_set("wisski_vocab_ctrl_index_timestamp_labels_" . $task['vid'], time());
-    variable_set('wisski_vocab_ctrl_index_stat_' . $task['vid'], $task['stat']);
-  }
   
-  // store the new agenda if we retrieved it from db
-  if (!$is_local) {
-    variable_set('wisski_vocab_ctrl_index_rebuilds', $rebuilds);
-  }
+    // store the finished task if we retrieved it from db
+    if (!$is_local) {
+      $term_rebuilds = variable_get('wisski_vocab_ctrl_index_rebuilds_terminated', array());
+      array_unshift($term_rebuilds, $task);
+      variable_set('wisski_vocab_ctrl_index_rebuilds_terminated', $term_rebuilds);
+    } else {
+      array_unshift($rebuilds, $task);
+    }
 
-  return $rebuilds;
+    return $rebuilds;
+
+  }
 
 }
 

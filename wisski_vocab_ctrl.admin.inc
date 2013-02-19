@@ -905,12 +905,27 @@ function wisski_vocab_ctrl_admin_cron_indexing() {
     '#options' => $indexable_vocs,
     '#weight' => 10,
   );
+  $form['add_task']['fids'] = array(
+    '#type' => 'checkboxes',
+    '#title' => t('Fields'),
+    '#description' => t('The fields that shall be indexed.'),
+    '#options' => array('label' => $fields['label']['name'], 'alt_label' => $fields['alt_label']['name']),
+    '#default_value' => array('label', 'alt_label'),
+    '#weight' => 15,
+  );
   $form['add_task']['limit'] = array(
     '#type' => 'textfield',
     '#title' => t('Limit per run'),
     '#description' => t('The maximum number of instances that get indexed per step/cron run. Depending on the endpoint\'s performance and server timeout settings this value may be increased or decreased.'),
     '#default_value' => 2000,
-    '#weight' => 15,
+    '#weight' => 20,
+  );
+  $form['add_task']['max_retries'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Max. retries per field'),
+    '#description' => t('Due to connection errors etc. a run may index no instances. Specify the number of retries before the task switches to the next field.'),
+    '#default_value' => '1',
+    '#weight' => 25,
   );
   $form['add_task']['immediately'] = array(
     '#type' => 'textfield',
@@ -955,38 +970,67 @@ function wisski_vocab_ctrl_admin_cron_indexing() {
     '#weight' => 50,
   );
 
+  $rebuilds = variable_get('wisski_vocab_ctrl_index_rebuilds', array());
+  $term_rebuilds = variable_get('wisski_vocab_ctrl_index_rebuilds_terminated', array());
+  $weight = 0;
+
+  foreach ($rebuilds as $task) {
+    $weight++;
+    $voc = $vocs[$task['vid']];
+
+    if (!$voc) {
+      drupal_set_message(t('Task with id %tid has unknown vocabulary id: $vid.', array('%tid' => $task['tid'], '%vid' => $task['vid'])));
+      continue;
+    }
+    
+    $form['status']['active']['fs_tid_' . $task['tid']] = array(
+      '#type' => 'fieldset',
+      '#title' => htmlentities($voc->name),
+      '#collapsible' => TRUE,
+    );
+    $form['status']['active']['fs_vid' . $task['tid']]['mu_vid' . $task['tid']] = array(
+      '#type' => 'markup',
+      '#value' => _wisski_vocab_ctrl_admin_cron_indexing_stat_string($task, $voc, $vocs, $fields, TRUE),
+    );
+
+  }
+  
+  foreach ($term_rebuilds as $task) {
+    $weight++;
+    $voc = $vocs[$task['vid']];
+
+    if (!$voc) {
+      drupal_set_message(t('Task with id %tid has unknown vocabulary id: %vid.', array('%tid' => $task['tid'], '%vid' => $task['vid'])), 'error');
+      continue;
+    }
+    
+    $form['status']['terminated']['fs_tid_' . $task['tid']] = array(
+      '#type' => 'fieldset',
+      '#title' => htmlentities($voc->name),
+      '#collapsible' => TRUE,
+    );
+    $form['status']['terminated']['fs_vid' . $task['tid']]['mu_vid' . $task['tid']] = array(
+      '#type' => 'markup',
+      '#value' => _wisski_vocab_ctrl_admin_cron_indexing_stat_string($task, $voc, $vocs, $fields, FALSE),
+    );
+
+  }
+  
+  return $form;
+
+}
+
+
+function _wisski_vocab_ctrl_admin_cron_indexing_stat_string($task, $voc, $vocs, $fields, $active) {
   // compile stats for tasks
   // this could actually be a table
-  $rebuilds = variable_get('wisski_vocab_ctrl_index_rebuilds', array());
-  $vid_reb = array();
-  foreach ($rebuilds as $k => $task) $vid_reb[$task['vid']] = $k;
-
-  foreach ($vocs as $voc) {
-    $stat = NULL;
-    $task = NULL;
-    $weight = 0;
-    $active = FALSE;
-
-    // determine whether we have completed or active stats for this voc
-    // each voc has max one task! either a completed task or an active one
-    if (isset($vid_reb[$voc->vid])) {
-      //active
-      $task = $rebuilds[$vid_reb[$voc->vid]];
-      $stat = $task['stat'];
-      $weight = $vid_reb[$voc->vid];
-      $active = TRUE;
-    } else {
-      $stat = variable_get('wisski_vocab_ctrl_index_stat_' . $voc->vid, NULL);
-      $weight = $voc->priority;
-    }
-
-    if (empty($stat)) continue; // voc has no tasks whatsoever
+    $stat = $task['stat'];
 
     $stat_str = '<ul>';
     $stat_str .= '<li>' . t('Started at %t', array('%t' => date(DATE_ISO8601, $stat['init_time']))) . '</li>';
     $stat_str .= '<li>' . t('%t runs', array('%t' => $stat['run_count'])) . '</li>';
-    // timout only for active tasks
-    if (!empty($task)) $stat_str .= '<li>' . t('Timeout: %t', array('%t' => $task['timeout'] ? t('enabled') : t('disabled'))) . '</li>';
+    $stat_str .= '<li>' . t('Limit: %t', array('%t' => $task['limit'])) . '</li>';
+    $stat_str .= '<li>' . t('Timeout: %t', array('%t' => $task['timeout'] ? t('enabled') : t('disabled'))) . '</li>';
     // fields progress
     foreach ($stat['counts'] as $fid => $field_count) {
       if (!isset($fields[$fid])) {
@@ -997,40 +1041,33 @@ function wisski_vocab_ctrl_admin_cron_indexing() {
             '%i' => $field_count['instance'],
             '%l' => $field_count['label'],
             // in case of an active task, specify whether field is being indexed now
-            '%c' => empty($task) ? '' : ((in_array($fid, $task['fids'])) ? t('(ongoing)') : t('(completed)')),
+            '%c' => (!$active) ? '' : ('(' . (in_array($fid, $task['fids']) ? t('ongoing') : t('completed')) . ')'),
             )) . '</li>';
       }
     }
-    if (!empty($task)) {
-      // only active stats
-      if (!isset($fields[$fid])) {
-        $stat_str .= t('<li>Field %f: unknown field ID</li>', array('%f' => $fid));
-      } else {
-        foreach(array_slice($task['fids'], 1) as $fid) {
+    if ($active) {
+      // only active tasks
+      foreach(array_slice($task['fids'], 1) as $fid) {
+        if (!isset($fields[$fid])) {
+          $stat_str .= t('<li>Field %f: unknown field ID</li>', array('%f' => $fid));
+        } else {
           $stat_str .= '<li>' . t('Field %f: yet to be indexed', array('%f' => $fields[$fid]['name'])) . '</li>';
         }
       }
-      $stat_str .= '<li>' . l(t('Stop task'), 'admin/settings/wisski/vocab_ctrl/stop_cron_indexing/' . $voc->vid) . '</li>';
+      $stat_str .= '<li>' . t('%n retries on current field, %d retries left', array('%n' => $task['retries'], '%d' => $task['max_retries'] - $task['retries'])) . '</li>';
+      $stat_str .= '<li>' . l('[' . t('Stop task') . ']', 'admin/settings/wisski/vocab_ctrl/adv_indexing/' . $task['tid'] . '/stop') . '</li>';
+
     } else {
-      // only terminated stats
+      // only terminated tasks
+      $stat_str .= '<li>' . t('%d retries at max per field', array('%d' => $task['max_retries'])) . '</li>';
       $stat_str .= '<li>' . t('Finished at %t', array('%t' => date(DATE_ISO8601, $stat['finish_time']))) . '</li>';
-      $stat_str .= '<li>' . t('Terminating status: %s', array('%s' => htmlentities($stat['term_status']))) . '</li>';
+      $stat_str .= '<li>' . t('Terminating status: %s', array('%s' => htmlentities($task['status']))) . '</li>';
+      $stat_str .= '<li>' . l('[' . t('Resume task') .']', 'admin/settings/wisski/vocab_ctrl/adv_indexing/' . $task['tid'] . '/resume')
+                . ' ' . l('[' . t('Delete task') .']', 'admin/settings/wisski/vocab_ctrl/adv_indexing/' . $task['tid'] . '/delete') . '</li>';
     }
     $stat_str .= '</ul>';
 
-    $form['status'][$active ? 'active' : 'terminated']['fs_vid' . $voc->vid] = array(
-      '#type' => 'fieldset',
-      '#title' => htmlentities($voc->name),
-      '#collapsible' => TRUE,
-    );
-    $form['status'][$active ? 'active' : 'terminated']['fs_vid' . $voc->vid]['mu_vid' . $voc->vid] = array(
-      '#type' => 'markup',
-      '#value' => $stat_str,
-    );
-
-  }
-  
-  return $form;
+    return $stat_str;
 
 }
 
@@ -1044,6 +1081,9 @@ function wisski_vocab_ctrl_admin_cron_indexing_validate($form, $form_state) {
   if (!preg_match('/^\d+$/', $form_state['values']['immediately'])) {
     form_set_error('immediately', t('Only integer values allowed'));
   }
+  if (!preg_match('/^\d+$/', $form_state['values']['max_retries'])) {
+    form_set_error('max_retries', t('Only integer values allowed'));
+  }
 
 }
 
@@ -1052,16 +1092,34 @@ function wisski_vocab_ctrl_admin_cron_indexing_submit($form, $form_state) {
   
   $v = $form_state['values'];
   include_once('wisski_vocab_ctrl.inc');
-  _wisski_vocab_ctrl_index_rebuilds_init_task($v['vid'], $v['limit'], NULL, $v['immediately'], !$v['disable_timeout']);
+  $fids = array_filter(array_values($v['fids']), function($a) { return $a !== 0; });
+  _wisski_vocab_ctrl_index_rebuilds_init_task($v['vid'], $v['limit'], $fids, $v['immediately'], !$v['disable_timeout'], $v['max_retries']);
 
 }
 
 
-function wisski_vocab_ctrl_admin_cron_indexing_stop($vid) {
-  
+function wisski_vocab_ctrl_admin_cron_indexing_op($tid, $op) {
   include_once('wisski_vocab_ctrl.inc');
-  _wisski_vocab_ctrl_index_rebuilds_stop($vid);
+  switch ($op) {
+    case 'stop':
+      _wisski_vocab_ctrl_index_rebuilds_stop($tid);
+      break;
 
-  drupal_goto('admin/settings/wisski/vocab_ctrl/cron_indexing');
+    case 'resume':
+      _wisski_vocab_ctrl_index_rebuilds_resume($tid);
+      break;
+
+    case 'delete':
+      _wisski_vocab_ctrl_index_rebuilds_delete($tid);
+      break;
+
+    default:
+      drupal_set_message(t('Unknown operation: %op', array('%op' => $op)), 'error');
+      break;
+
+  }
+  drupal_goto('admin/settings/wisski/vocab_ctrl/adv_indexing');
 
 }
+
+
