@@ -46,7 +46,7 @@ function wisski_vocab_ctrl_schema () {
     ),
     'indexes' => array(
       'value' => array(array('value', 100)),
-      'lang_value' => array('lang', array('value', 100), 'lang'),
+      'lang_value' => array('lang', array('value', 100)),
       'fid_lang_value' => array('lang', 'fid', array('value', 100)),
       'fid_value' => array('fid', array('value', 100)),
       'lang_fid' => array('lang', 'fid'),
