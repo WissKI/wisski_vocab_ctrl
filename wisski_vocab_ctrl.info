@@ -5,3 +5,4 @@ core = 6.x
 package = "WissKI"
 dependencies[] = wisski_store
 dependencies[] = wisski_pathbuilder
+dependencies[] = wisski_accesspoint
