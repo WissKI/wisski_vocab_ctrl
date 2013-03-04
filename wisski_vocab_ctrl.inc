@@ -692,6 +692,7 @@ function wisski_vocab_ctrl_create_labels_index($voc, $fids, $status_callback = N
       if ($offset_break !== NULL && $offset >= $offset_break) return;
 
       $lc = _wisski_vocab_ctrl_create_labels_index_step($voc, $fid, $offset, $limit);
+      if ($lc['label_count'] == 0) return;
       $label_count += $lc['label_count'];
 
       if ($status_callback) {
