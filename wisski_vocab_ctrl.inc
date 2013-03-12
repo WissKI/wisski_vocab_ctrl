@@ -929,14 +929,15 @@ function _wisski_vocab_ctrl_index_rebuilds_exec_task($rebuilds = NULL) {
 
   // execute one task!
   $task = array_shift($rebuilds);
+  if (!$is_local) {
+    // store the new agenda if we retrieved it from db
+    variable_set('wisski_vocab_ctrl_index_rebuilds', $rebuilds);
+  }
+
   $voc = wisski_vocab_ctrl_get($task['vid']);
   if (!$voc) {
     // this task is wrong and must be deleted
     drupal_set_message(t('Indexing task refers to non-existent vocabulary with id: %vid', array('vid' => $task['vid'])));
-    // store the new agenda if we retrieved it from db
-    if (!$is_local) {
-      variable_set('wisski_vocab_ctrl_index_rebuilds', $rebuilds);
-    }
     return $rebuilds;
   }
   
