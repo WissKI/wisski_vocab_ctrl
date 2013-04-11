@@ -746,7 +746,7 @@ function _wisski_vocab_ctrl_create_labels_index_step($voc, $fid, $offset, $limit
     
   }
   
-  $query = 'INSERT INTO {wisski_vocab_ctrl_index} (`fid`, `value`, `vid`, `uri`) VALUES ' . implode(', ', array_fill(0, count($values) / 4, "('%s', '%s', %d, '%s')")) . ";";
+  $query = 'INSERT INTO {wisski_vocab_ctrl_index} (fid, value, vid, uri) VALUES ' . implode(', ', array_fill(0, count($values) / 4, "('%s', '%s', %d, '%s')")) . ";";
   db_query($query, $values);
 
   return array('label_count' => $label_count, 'instance_count' => $uri_count);
@@ -796,7 +796,7 @@ function _wisski_vocab_ctrl_index_rebuilds_init_task($vid, $limit, $fids = NULL,
   variable_set("wisski_vocab_ctrl_index_labels_$vid", 'rebuild');
   variable_del('wisski_vocab_ctrl_index_stat_' . $vid);
   foreach ($fids as $fid) {
-    db_query("DELETE FROM {wisski_vocab_ctrl_index} WHERE `vid` = %d and `fid` = '%s'", $vid, $fid);
+    db_query("DELETE FROM {wisski_vocab_ctrl_index} WHERE vid = %d and fid = '%s'", $vid, $fid);
   }
 
   // run task now a couple of times (optionally)
