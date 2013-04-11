@@ -111,7 +111,7 @@ function _wisski_vocab_ctrl_is_imported($vid, $term_uri) {
 }
 
 
-function _wisski_vocab_ctrl_get_triples($vid, $term_uri) {
+function _wisski_vocab_ctrl_get_triples($vid, $term_uri, $direct_store) {
   global $base_root, $base_path;
 //  drupal_set_message("I'm alive");
   if (!$vid || !$term_uri) return FALSE;
@@ -224,11 +224,13 @@ function _wisski_vocab_ctrl_get_triples($vid, $term_uri) {
   }
   
   // create nodes for instances and save trilpes to standard instance graph
-  foreach ($triples as $t) {
-    $n = wisski_store_addNodeForTriple($t);
+  if ($direct_store) {
+    foreach ($triples as $t) {
+      $n = wisski_store_addNodeForTriple($t);
+    }
+    $store = wisski_store_getObj()->wisski_ARCAdapter_getStore();
+    $a = $store->insert($triples, wisski_store_getObj()->wisski_ARCAdapter_graphName());
   }
-  $store = wisski_store_getObj()->wisski_ARCAdapter_getStore();
-  $a = $store->insert($triples, wisski_store_getObj()->wisski_ARCAdapter_graphName());
   
   return $triples;
 

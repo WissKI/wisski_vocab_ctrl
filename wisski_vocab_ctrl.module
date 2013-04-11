@@ -167,6 +167,8 @@ function wisski_vocab_ctrl_init() {
   }
   //wisski_vocab_ctrl_check_reindex(FALSE);
 
+  drupal_add_css(drupal_get_path('module', 'wisski_vocab_ctrl') . '/wisski_vocab_ctrl.css');
+
 }
 
 
@@ -202,6 +204,234 @@ function wisski_vocab_ctrl_check_reindex($set = FALSE) {
   }
 
 }
+
+
+function wisski_vocab_ctrl_block($op = 'list', $delta = 0, $edit = array()) {
+
+  switch ($op) {
+    case 'list':
+      return array(
+        0 => array(
+          'info' => t('Vocabulary information'),
+          'cache' => BLOCK_PER_PAGE,
+        ),
+      );
+
+    case 'view':
+
+      // check that current page is an individual
+      if(is_numeric(arg(1))) $node = node_load(arg(1));
+      if (!isset($node) || $node->type != 'individual') return;
+      
+      $inst = wisski_store_getObj()->wisski_ARCAdapter_delNamespace($node->title);
+      $fids = variable_get('wisski_vocab_ctrl_block_infobox_fids', array('__vocs__', 'all', 'broader_labels', '__map__'));
+      $content = wisski_vocab_ctrl_info_box($inst, array(), $fids);
+
+      if (empty($content)) return;
+
+      return array(
+        'subject' => t('Vocabulary information'),
+        'content' => $content,
+      );
+
+    case 'configure':
+      
+      $fids = wisski_vocab_ctrl_field_get(); 
+      $options = array('broader_labels' => t('Broader'), '__map__' => t('A Google map'), '__image__' => t('An image'), '__vocs__' => t('Vocabularies containing the entry'));
+      foreach ($fids as $fid => $i) {
+        $options[$fid] = $i['name'];
+      }
+  
+      return array(
+        'fids' => array(
+          '#type' => 'checkboxes',
+          '#title' => t('Fields to be displayed'),
+          '#description' => t('Only the selected fields will be shown in the block'),
+          '#options' => $options,
+          '#default_value' => variable_get('wisski_vocab_ctrl_block_infobox_fids', array_keys($options)),
+        )
+      );
+
+    case 'save':
+      
+      $fids = array_keys(array_filter($edit['fids'], function($a) { return $a != 0; }));
+      variable_set('wisski_vocab_ctrl_block_infobox_fids', $fids);
+      
+    default:
+      return;
+
+  }
+
+}
+
+
+function wisski_vocab_ctrl_info_box($inst, $vocs = array(), $fids = array()) {
+  
+  $vocs = (array) $vocs;
+  if (empty($vocs)) $vocs = wisski_vocab_ctrl_get();
+  $fids = (array) $fids;
+  if (empty($fids)) $fids = array('all', 'broader_labels', '__vocs__', '__map__');
+  
+  // check if we shall show the special fields and remove them from the vocab fields
+  $inc = array(
+    '__vocs__' => FALSE,
+    '__map__' => FALSE,
+    '__image__' => FALSE,
+  );
+  foreach ($fids as $k => $fid) {
+    if (in_array($fid, $inc)) {
+      $inc[$fid] = 1;
+      unset($fids[$k]);
+    }
+  }
+
+  // do the lookup voc per voc
+  $data_per_vid = array();
+  foreach ($vocs as $v) {
+    $data = wisski_vocab_ctrl_lookup($fids, $v, $inst, NULL, NULL, NULL, 'exact', 'never');
+    if ($data) $data_per_vid[$v->vid] = $data;
+  }
+  
+  if (count($data_per_vid) == 0) return NULL;  // no auth information, do not show the box
+  
+  $fields = wisski_vocab_ctrl_field_get();
+
+  $name_vocs = count($data_per_vid) != 1; // if there are multiple vocs, the name of the originating voc is appenaded to each value 
+
+  $content = array(
+    '#suffix' => '</div>',
+    '#prefix' => '<div class="wisski_vocab_ctrl_infobox">',
+  );
+  if ($inc['__vocs__']) {
+    $content['in_vocs'] = array(
+      '#type' => 'item',
+      '#title' => 'Vocabularies',
+      '#value' => '<ul><li>' . join(', ', array_map(function ($a) { return check_plain(wisski_vocab_ctrl_get($a, 'name')); }, array_keys($data_per_vid))) . '</li></ul>',
+      '#weight' => 0,
+    );
+  }
+  
+  $c = 3;
+  foreach ($data_per_vid as $vid => $data) {
+    
+    // for the first pair of coordinates we draw a map
+    if ($inc['__map__'] && isset($data['latitude']) && isset($data['longitude']) && !isset($content['map'])) {
+      // canonicalize coords to decimal format
+      list($lat, $lng) = _wisski_vocab_ctrl_parse_coords($data['latitude'][0], $data['longitude'][0]);
+      
+      $content['map'] = array(
+        '#type' => 'item',
+        '#title' =>  $name_vocs ? t('Location according to @v', array('@v' => $vocs[$vid]->name)) : t('Location'),
+        '#value' => _wisski_vocab_ctrl_make_google_map($lat, $lng),
+        '#weight' => 10000,
+      );
+    }
+    
+    // the first image will be shown
+    if ($inc['__image__'] && isset($data['image']) && !isset($content['map'])) {
+      
+    }
+
+
+    foreach ($data[$inst] as $fid => $values) {
+      if (!isset($content["field_$fid"])) {
+        $content["field_$fid"] = array(
+          '#type' => 'item',
+          '#title' => check_plain($fields[$fid]['name']),
+          '#value' => '<ul>',
+          '#weight' => $fid == 'label' ? 1 : ($fid == 'alt_label' ? 2 : $c++),
+        );
+      }
+      
+      if ($fid == 'broader_labels') {
+
+        $content["field_$fid"]['#value'] .= '<li>';
+        $content["field_$fid"]['#value'] .= join(' | ', array_map(function($a) { return check_plain($a); }, $values));
+        if ($name_vocs) $content["field_$fid"]['#value'] .= ' (' . $vocs[$vid]->name . ')';
+        $content["field_$fid"]['#value'] .= '</li>';
+
+      } else {
+
+        foreach ($values as $v) {
+          $content["field_$fid"]['#value'] .= '<li>';
+          $content["field_$fid"]['#value'] .= check_plain($v['value']);
+          if ($name_vocs) $content["field_$fid"]['#value'] .= ' (' . $vocs[$vid]->name . ')';
+          $content["field_$fid"]['#value'] .= '</li>';
+        }
+
+      }
+    }
+  }
+  
+  foreach ($content as $n => &$e) {
+    if (substr($n, 0, 6) == 'field_') {
+      $e['#value'] .= '</ul>';
+    }
+  }
+
+  return drupal_render($content);
+
+}
+
+
+function _wisski_vocab_ctrl_parse_coords($lat, $lng) {
+
+  if (preg_match('/[NSWE]/', $lat) || preg_match('/[NSWE]/', $lng)) {
+    // degrees minutes seconds orientation/NSWE
+
+    $lat_parts = preg_split('/[^-\d\w\.]+/u', $lat);
+    $lng_parts = preg_split('/[^-\d\w\.]+/u', $lng);
+   
+    $lat = _wisski_vocab_ctrl_parse_coords_helper($lat_parts);
+    $lng = _wisski_vocab_ctrl_parse_coords_helper($lng_parts);
+
+  } else if (preg_match("/°|\d[°'`´ ]+\\d/", $coords['lat'])) {
+    // +-degrees minutes seconds
+
+    $lat_parts = preg_split('/[^-\d\.]+/u', $lat);
+    $lng_parts = preg_split('/[^-\d\.]+/u', $lng);
+    
+    $lat = _wisski_vocab_ctrl_parse_coords_helper($lat_parts);
+    $lng = _wisski_vocab_ctrl_parse_coords_helper($lng_parts);
+
+  }
+  
+  return array($lat, $lng);
+
+}
+
+
+function _wisski_vocab_ctrl_parse_coords_helper($parts) {
+
+  /* fill values if not present */
+  $degrees   = (count($parts) > 0) ? (float)  $parts[0] : 0;
+  $minutes   = (count($parts) > 1) ? (float)  $parts[1] : 0;
+  $seconds   = (count($parts) > 2) ? (float)  $parts[2] : 0;
+  $direction = (count($parts) > 3) ? (string) $parts[3] : 'Q'; // something different from S or W
+
+  $dd = abs($degrees) + $minutes/60 + $seconds/3600;
+  if ($direction == "S" || $direction == "W" || $degrees < 0) {
+    $dd = $dd * -1;
+  } // Don't do anything for N or E
+  return $dd;
+
+}
+
+
+function _wisski_vocab_ctrl_make_google_map($lat, $lng) {
+  $zoomlvl = 'zoom=8';
+  $size = '&size=125x125';
+  $maptype = '&maptype=roadmap';
+  $marker = '&markers=color:red|label:A|' . $lat . ',' . $lng;
+  $googleMaps = 'http://maps.google.com/maps/api/staticmap?';
+  $googleMapsLink = 'http://maps.google.com/?';
+  $loc = 'q=loc:' . $lat . ',' . $lng;
+  $query = $googleMaps . $zoomlvl . $size . $maptype . $marker . '&sensor=false';
+  $linkQuery = $googleMapsLink  .  $loc  .  '&z=8';
+  $map = '<a target="_blank" href="'  .  $linkQuery  .  '"><img src="' . $query . '" style="padding-right:5px;"></a>';
+  return $map;
+}
+
 
 
 
@@ -267,9 +497,9 @@ function wisski_vocab_ctrl_delete($vid) {
 *
 * @return an empty array
 */
-function wisski_vocab_ctrl_get_triples($vid, $term_uri) {
+function wisski_vocab_ctrl_get_triples($vid, $term_uri, $direct_store = FALSE) {
   include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
-  return _wisski_vocab_ctrl_get_triples($vid, $term_uri);
+  return _wisski_vocab_ctrl_get_triples($vid, $term_uri, $direct_store);
 }
 
 
