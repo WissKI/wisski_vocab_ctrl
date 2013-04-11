@@ -111,7 +111,7 @@ function _wisski_vocab_ctrl_is_imported($vid, $term_uri) {
 }
 
 
-function _wisski_vocab_ctrl_get_triples($vid, $term_uri) {
+function _wisski_vocab_ctrl_get_triples($vid, $term_uri, $direct_store) {
   global $base_root, $base_path;
 //  drupal_set_message("I'm alive");
   if (!$vid || !$term_uri) return FALSE;
@@ -224,11 +224,13 @@ function _wisski_vocab_ctrl_get_triples($vid, $term_uri) {
   }
   
   // create nodes for instances and save trilpes to standard instance graph
-  foreach ($triples as $t) {
-    $n = wisski_store_addNodeForTriple($t);
+  if ($direct_store) {
+    foreach ($triples as $t) {
+      $n = wisski_store_addNodeForTriple($t);
+    }
+    $store = wisski_store_getObj()->wisski_ARCAdapter_getStore();
+    $a = $store->insert($triples, wisski_store_getObj()->wisski_ARCAdapter_graphName());
   }
-  $store = wisski_store_getObj()->wisski_ARCAdapter_getStore();
-  $a = $store->insert($triples, wisski_store_getObj()->wisski_ARCAdapter_graphName());
   
   return $triples;
 
@@ -929,14 +931,15 @@ function _wisski_vocab_ctrl_index_rebuilds_exec_task($rebuilds = NULL) {
 
   // execute one task!
   $task = array_shift($rebuilds);
+  if (!$is_local) {
+    // store the new agenda if we retrieved it from db
+    variable_set('wisski_vocab_ctrl_index_rebuilds', $rebuilds);
+  }
+
   $voc = wisski_vocab_ctrl_get($task['vid']);
   if (!$voc) {
     // this task is wrong and must be deleted
     drupal_set_message(t('Indexing task refers to non-existent vocabulary with id: %vid', array('vid' => $task['vid'])));
-    // store the new agenda if we retrieved it from db
-    if (!$is_local) {
-      variable_set('wisski_vocab_ctrl_index_rebuilds', $rebuilds);
-    }
     return $rebuilds;
   }
   
