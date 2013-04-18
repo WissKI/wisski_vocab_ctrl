@@ -348,6 +348,12 @@ function wisski_vocab_ctrl_info_box($inst, $vocs = array(), $fids = array()) {
     
     // the first image will be shown
     if ($inc['__image__'] && isset($data['image']) && !isset($content['map'])) {
+      $content['image'] = array(
+        '#type' => 'item',
+        '#title' =>  $name_vocs ? t('Image from @v', array('@v' => $vocs[$vid]->name)) : t('Image'),
+        '#value' => '<ul><li><img src="' . $data['image'] .'" alt="' . $data['image'] .'"/></li></ul>',
+        '#weight' => 10001,
+      );
       
     }
 
