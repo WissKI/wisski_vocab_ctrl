@@ -1,8 +1,83 @@
+div.wisski_vocab_ctrl_infobox tbody {
+  border-top:0px;
+}
+
+div.wisski_vocab_ctrl_infobox td.wisski_vocab_ctrl_infobox_col2 {
+  left:208px;
+  width:120px;
+}
+
+
+div.wisski_vocab_ctrl_infobox div {
+  margin-bottom:0em;
+  margin-top:0.5em;
+}
+
 div.wisski_vocab_ctrl_infobox ul {
   padding-left : 10px;
+  margin-top:0px;
+  margin-bottom:0em;
+}
+
+div.wisski_vocab_ctrl_infobox label {
+  color: #808080;
+  font-size: 0.8em;
+  font-style: italic;
+  font-family: sans-serif;
 }
 
 div.wisski_vocab_ctrl_infobox ul li {
   list-style-image: none;
   list-style-type: none;
 }
+
+#wisski_vocab_ctrl_infobox_title h1
+{
+  font-size:0.9em;
+  font-weight:bold;
+  padding:0;
+  margin:0;
+}
+
+#wisski_vocab_ctrl_infobox_title h2
+{
+  font-size:0.8em;
+  font-weight:bold;
+  padding:0;
+  margin:0;
+}
+
+#wisski_vocab_ctrl_infobox_title a 
+{
+  font-size:0.7em;
+  font-weight:normal;
+  padding:0;
+  margin:0;
+}
+
+.wisski_vocab_ctrl_infobox_voc_list {
+  font-size:0.7em;
+}
+
+.wisski_vocab_ctrl_infoboxtip {
+  margin:0px;
+}
+
+#wisski_vocab_ctrl_infoboxtip div.wisski_vocab_ctrl_infobox div {
+  margin-top:0px;
+}
+
+div.wisski_vocab_ctrl_infobox ul.wisski_vocab_ctrl_infobox_image {
+  margin-top:5px;
+}
+
+div.wisski_vocab_ctrl_infobox ul.wisski_vocab_ctrl_infobox_map {
+  margin-top:5px;
+}
+
+div.wisski_vocab_ctrl_infobox ul.wisski_vocab_ctrl_infobox_image img {
+  width:120px;
+  left:0px;
+}
+
+

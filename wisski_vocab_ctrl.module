@@ -84,6 +84,15 @@ function wisski_vocab_ctrl_menu () {
       'file' => 'wisski_vocab_ctrl.admin.inc',
       'weight' => 50,
       );
+  $items['admin/settings/wisski/vocab_ctrl/infobox'] = array(
+      'title' => 'Infobox',
+      'type' => MENU_LOCAL_TASK,
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('wisski_vocab_ctrl_admin_tooltip'),
+      'access arguments' => array('wisski administrate page'),
+      'file' => 'wisski_vocab_ctrl.admin.inc',
+      'weight' => 60,
+      );
   $items['admin/settings/wisski/vocab_ctrl/adv_indexing/%/stop'] = array(
       'title' => 'Indexing Task',
       'type' => MENU_CALLBACK,
@@ -150,8 +159,20 @@ function wisski_vocab_ctrl_menu () {
       'type' => MENU_CALLBACK,
       'page callback' => 'wisski_vocab_ctrl_admin_check_reindex',
       'page arguments' => array(4, 5),
-      'access arguments' => array('wisski use editor'),
+      'access callback' => TRUE,
       'file' => 'wisski_vocab_ctrl.admin.inc',
+      );
+  $items['wisski/vocab_ctrl/ajax/infobox'] = array(
+      'type' => MENU_CALLBACK,
+      'page callback' => 'wisski_vocab_ctrl_ajax_infobox',
+      'page arguments' => array(),
+      'access callback' => TRUE,
+      );
+  $items['wisski/vocab_ctrl/ajax/group'] = array(
+      'type' => MENU_CALLBACK,
+      'page callback' => 'wisski_vocab_ctrl_ajax_group',
+      'page arguments' => array(),
+      'access callback' => TRUE,
       );
   return $items;
 
@@ -166,8 +187,23 @@ function wisski_vocab_ctrl_init() {
     variable_set('wisski_vocab_ctrl_needs_reindex', TRUE);
   }
   //wisski_vocab_ctrl_check_reindex(FALSE);
-
-  drupal_add_css(drupal_get_path('module', 'wisski_vocab_ctrl') . '/wisski_vocab_ctrl.css');
+  
+  $path = drupal_get_path('module', 'wisski_vocab_ctrl');
+  drupal_add_css($path . '/wisski_vocab_ctrl.css');
+  if (!variable_get('wisski_vocab_ctrl_infobox_tips_disable', FALSE)) {
+    drupal_add_js($path . '/lib/jquery.qtip.js');
+    drupal_add_js($path . '/infobox.js', 'module');
+  }
+  drupal_add_js(
+      array(
+          'wisski' => array(
+              'vocab_ctrl' => array(
+                  'about_url' => url('wisski/vocab_ctrl/ajax/infobox'),
+                  'showTooltipsForForm' => variable_get('wisski_vocab_ctrl_infobox_tips_show_for_form', TRUE),
+                  ),
+              ),
+          ),
+      'setting');
 
 }
 
@@ -206,10 +242,84 @@ function wisski_vocab_ctrl_check_reindex($set = FALSE) {
 }
 
 
+function wisski_vocab_ctrl_ajax_group() {
+  
+  $query = (object) array('uri' => NULL, 'include' => array('id', 'name'));
+  wisski_parse_http_params(&$query, 'about');
+  if ($query->uri === NULL) {
+    print "{}";
+    exit;
+  }
+  
+  // we need to know the node to check access
+  $nid = wisski_store_get_nid_for_instance($query->uri);
+  if ($nid === NULL) {
+    print "{}";
+    exit;
+  }
+  $node = node_load($nid);
+
+  // check if user has right to view instance
+  if (!node_access('view', $node)) {
+    print "{}";
+    exit;
+  }
+      
+  $gid = wisski_pathbuilder_getGroupIDForIndividual($query->uri);
+  $resp = array();
+  if (isset($query->include['id'])) $resp['id'] = $gid;
+  if (isset($query->include['name'])) $resp['name'] = wisski_pathbuilder_getName($gid);
+
+  drupal_json($resp);
+  return;
+
+}
+
+
+function wisski_vocab_ctrl_ajax_infobox() {
+  
+  $query = (object) array('uri' => NULL);
+  wisski_parse_http_params(&$query, 'about');
+
+  if ($query->uri === NULL) {
+    print "<div>No instance URI</div>";
+    exit;
+  }
+  
+  $nid = wisski_store_get_nid_for_instance($query->uri);
+
+  if ($nid === NULL) {
+    print "<div>Unknown instance URI</div>";
+    exit;
+  }
+  
+  $node = node_load($nid);
+
+  // check if user has right to view instance
+  if (!node_access('view', $node)) {
+    print "<div>Access denied</div>";
+    exit;
+  }
+      
+  $fids = variable_get("wisski_vocab_ctrl_block_infobox_fids", array('__vocs__', '__uris__', 'all', 'broader_labels', '__map__'));
+  $content = wisski_vocab_ctrl_infobox($query->uri, array(), $fids, variable_get('wisski_vocab_ctrl_infobox_tips_images_col', 2));
+
+  if (!$content) {
+    print "<div>No information available</div>";
+    exit;
+  }
+
+  print $content;
+  return;
+
+}
+
+
 function wisski_vocab_ctrl_block($op = 'list', $delta = 0, $edit = array()) {
 
   switch ($op) {
     case 'list':
+      
       return array(
         0 => array(
           'info' => t('Vocabulary information'),
@@ -222,10 +332,14 @@ function wisski_vocab_ctrl_block($op = 'list', $delta = 0, $edit = array()) {
       // check that current page is an individual
       if(is_numeric(arg(1))) $node = node_load(arg(1));
       if (!isset($node) || $node->type != 'individual') return;
+
+      // check if user has right to view instance
+      if (!node_access('view', $node)) return;
       
       $inst = wisski_store_getObj()->wisski_ARCAdapter_delNamespace($node->title);
-      $fids = variable_get('wisski_vocab_ctrl_block_infobox_fids', array('__vocs__', 'all', 'broader_labels', '__map__'));
-      $content = wisski_vocab_ctrl_info_box($inst, array(), $fids);
+
+      $fids = variable_get("wisski_vocab_ctrl_block_infobox_fids", array('__vocs__', '__uris__', 'all', 'broader_labels', '__map__'));
+      $content = wisski_vocab_ctrl_infobox($inst, array(), $fids);
 
       if (empty($content)) return;
 
@@ -236,26 +350,11 @@ function wisski_vocab_ctrl_block($op = 'list', $delta = 0, $edit = array()) {
 
     case 'configure':
       
-      $fids = wisski_vocab_ctrl_field_get(); 
-      $options = array('broader_labels' => t('Broader entries'), '__map__' => t('A Google map'), '__image__' => t('An image'), '__vocs__' => t('Vocabularies containing the entry'));
-      foreach ($fids as $fid => $i) {
-        $options[$fid] = $i['name'];
-      }
-  
-      return array(
-        'fids' => array(
-          '#type' => 'checkboxes',
-          '#title' => t('Fields to be displayed'),
-          '#description' => t('Only the selected fields will be shown in the block'),
-          '#options' => $options,
-          '#default_value' => variable_get('wisski_vocab_ctrl_block_infobox_fids', array_keys($options)),
-        )
-      );
+      return wisski_vocab_ctrl_admin_infobox('block');
 
     case 'save':
       
-      $fids = array_keys(array_filter($edit['fids']));
-      variable_set('wisski_vocab_ctrl_block_infobox_fids', $fids);
+      wisski_vocab_ctrl_admin_infobox_submit('block', $edit);
       return;
       
     default:
@@ -266,7 +365,7 @@ function wisski_vocab_ctrl_block($op = 'list', $delta = 0, $edit = array()) {
 }
 
 
-function wisski_vocab_ctrl_info_box($inst, $vocs = array(), $fids = array()) {
+function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $images_col = 1) {
   
   $vocs = (array) $vocs;
   if (empty($vocs)) $vocs = wisski_vocab_ctrl_get();
@@ -316,13 +415,23 @@ function wisski_vocab_ctrl_info_box($inst, $vocs = array(), $fids = array()) {
   $name_vocs = count($data_per_vid) != 1; // if there are multiple vocs, the name of the originating voc is appenaded to each value 
 
   $content = array(
-    '#suffix' => '</div>',
-    '#prefix' => '<div class="wisski_vocab_ctrl_infobox">',
+    '#prefix' => '<div class="wisski_vocab_ctrl_infobox"><table>',
+    '#suffix' => '</table></div>',
+    'col1' => array(
+      '#prefix' => '<tr><td class="wisski_vocab_ctrl_infobox_col1">',
+      '#suffix' => '</td>',
+      '#weight' => 0,
+    ),
+    'col2' => array(
+      '#prefix' => '<td class="wisski_vocab_ctrl_infobox_col2">',
+      '#suffix' => '</td></tr>',
+      '#weight' => 1,
+    ),
   );
   if ($inc['__vocs__']) {
-    $content['in_vocs'] = array(
+    $content['col1']['in_vocs'] = array(
       '#type' => 'item',
-      '#title' => 'Vocabularies',
+      '#title' => 'Vocabulary',
       '#value' => '<ul><li>' . join(', ', array_map(function ($a) { return check_plain(wisski_vocab_ctrl_get($a, 'name')); }, array_keys($data_per_vid))) . '</li></ul>',
       '#weight' => 0,
     );
@@ -334,24 +443,24 @@ function wisski_vocab_ctrl_info_box($inst, $vocs = array(), $fids = array()) {
     $data = $data[$inst];
     
     // for the first pair of coordinates we draw a map
-    if ($inc['__map__'] && isset($data['latitude']) && isset($data['longitude']) && !isset($content['map'])) {
+    if ($inc['__map__'] && isset($data['latitude']) && isset($data['longitude']) && !isset($content['col1']['map'])) {
       // canonicalize coords to decimal format
       list($lat, $lng) = _wisski_vocab_ctrl_parse_coords($data['latitude'][0]['value'], $data['longitude'][0]['value']);
       
-      $content['map'] = array(
-        '#type' => 'item',
+      $content["col$images_col"]['map'] = array(
+        '#type' => 'markup',
         '#title' =>  $name_vocs ? t('Location according to @v', array('@v' => $vocs[$vid]->name)) : t('Location'),
-        '#value' => '<ul><li>' . _wisski_vocab_ctrl_make_google_map($lat, $lng) .'</li></ul>',
+        '#value' => '<ul class="wisski_vocab_ctrl_infobox_map"><li' . ($name_vocs ? ' title="' . t('Location according to @v', array('@v' => $vocs[$vid]->name)) . '"' : '') . '>' . _wisski_vocab_ctrl_make_google_map($lat, $lng) .'</li></ul>',
         '#weight' => 10000,
       );
     }
     
     // the first image will be shown
-    if ($inc['__image__'] && isset($data['image']) && !isset($content['map'])) {
-      $content['image'] = array(
-        '#type' => 'item',
-        '#title' =>  $name_vocs ? t('Image from @v', array('@v' => $vocs[$vid]->name)) : t('Image'),
-        '#value' => '<ul><li><img src="' . $data['image'] .'" alt="' . $data['image'] .'"/></li></ul>',
+    if ($inc['__image__'] && isset($data['image']) && !isset($content['col1']['image'])) {
+      $image = $data['image'][0]['value'];
+      $content["col$images_col"]['image'] = array(
+        '#type' => 'markup',
+        '#value' => '<ul class="wisski_vocab_ctrl_infobox_image"><li' . ($name_vocs ? ' title="' . t('Image from @v', array('@v' => $vocs[$vid]->name)) . '"' : '') . '><img src="' . $image .'" alt="' . $image .'"/></li></ul>',
         '#weight' => 10001,
       );
       
@@ -362,38 +471,45 @@ function wisski_vocab_ctrl_info_box($inst, $vocs = array(), $fids = array()) {
       if (!isset($data[$fid])) continue;
       $values = $data[$fid];
 
-      if (!isset($content["field_$fid"])) {
-        $content["field_$fid"] = array(
+      if (!isset($content['col1']["field_$fid"])) {
+        $content['col1']["field_$fid"] = array(
           '#type' => 'item',
           '#title' => $fid == 'broader_labels' ? t('Broader entries') : check_plain($fields[$fid]['name']),
-          '#value' => '<ul>',
+          '#value' => array(),
           '#weight' => $fid == 'label' ? 1 : ($fid == 'alt_label' ? 2 : $c++),
         );
       }
       
       if ($fid == 'broader_labels') {
-
-        $content["field_$fid"]['#value'] .= '<li>';
-        $content["field_$fid"]['#value'] .= join(' | ', array_map(function($a) { return check_plain($a); }, $values));
-        if ($name_vocs) $content["field_$fid"]['#value'] .= ' (' . $vocs[$vid]->name . ')';
-        $content["field_$fid"]['#value'] .= '</li>';
+        
+        $value = join(' | ', array_map(function($a) { return check_plain($a); }, $values));
+        if (!isset($content['col1']["field_$fid"]['#value'][$value])) $content['col1']["field_$fid"]['#value'][$value] = array(); 
+        $content['col1']["field_$fid"]['#value'][$value][] = check_plain($vocs[$vid]->name);
 
       } else {
 
         foreach ($values as $v) {
-          $content["field_$fid"]['#value'] .= '<li>';
-          $content["field_$fid"]['#value'] .= check_plain($v['value']);
-          if ($name_vocs) $content["field_$fid"]['#value'] .= ' (' . $vocs[$vid]->name . ')';
-          $content["field_$fid"]['#value'] .= '</li>';
+          $value = check_plain($v['value']);
+          if (!isset($content['col1']["field_$fid"]['#value'][$value])) $content['col1']["field_$fid"]['#value'][$value] = array(); 
+          $content['col1']["field_$fid"]['#value'][$value][] = check_plain($vocs[$vid]->name);
         }
 
       }
     }
   }
   
-  foreach ($content as $n => &$e) {
+  foreach ($content['col1'] as $n => &$e) {
     if (substr($n, 0, 6) == 'field_') {
-      $e['#value'] .= '</ul>';
+      $value = '<ul>';
+      foreach ($e['#value'] as $v => $voca) {
+        $value .= '<li>' . $v;
+        if ($name_vocs) $value .= ' <span class="wisski_vocab_ctrl_infobox_voc_list">(' . join(', ',  $voca) . ')</span>';
+        $value .= '</li>';
+      }
+
+      $value .= '</ul>';
+      
+      $e['#value'] = $value;
     }
   }
 
@@ -448,7 +564,7 @@ function _wisski_vocab_ctrl_parse_coords_helper($parts) {
 
 function _wisski_vocab_ctrl_make_google_map($lat, $lng) {
   $zoomlvl = 'zoom=8';
-  $size = '&size=125x125';
+  $size = '&size=120x120';
   $maptype = '&maptype=roadmap';
   $marker = '&markers=color:red|label:A|' . $lat . ',' . $lng;
   $googleMaps = 'http://maps.google.com/maps/api/staticmap?';

@@ -855,7 +855,7 @@ function wisski_vocab_ctrl_admin_mapping_settings_submit($form, $form_state) {
 
 
 /*============================================ *
-*  MAPPINGS
+*  CRON INDEXING
 * ============================================ */
 
 
@@ -1123,3 +1123,133 @@ function wisski_vocab_ctrl_admin_cron_indexing_op($tid, $op) {
 }
 
 
+
+/*============================================ *
+*  INFOBOX BLOCK / TOOLTIP
+* ============================================ */
+
+
+function wisski_vocab_ctrl_admin_infobox($type) {
+
+  $weights = variable_get("wisski_vocab_ctrl_infobox_${type}_weights", array());
+  $fids = wisski_vocab_ctrl_field_get(); 
+  $fids = array(
+    '__vocs__' => array(
+      'name' => t('Vocabularies containing the entry'),
+      'weight' => isset($weights['__vocs__']) ? $weights['__vocs__'] : -50,
+    ),
+    'broader_labels' => array(
+      'name' => t('Broader entries'),
+      'weight' => isset($weights['broader_labels']) ? $weights['broader_labels'] : 10,
+    ),
+    '__map__' => array(
+      'name' => t('A Google map'),
+      'weight' => isset($weights['__map__']) ? $weights['__map__'] : 48,
+    ),
+    '__image__' => array(
+      'name' => t('An image'),
+      'weight' => isset($weights['__image__']) ? $weights['__image__'] : 50,
+    ),
+  );
+  foreach (wisski_vocab_ctrl_field_get() as $fid => $i) {
+    $fids[$fid] = array(
+      'name' => $i['name'],
+      'weight' => isset($weights[$fid]) ? $weights[$fid] : 0,
+    );
+  }
+  
+  uasort($fids, function($a, $b) { return $a['weight'] - $b['weight']; });
+  
+  $enabled = array_map(function($a) { return $a['name']; }, $fids);
+  $weights = array_map(function($a) { return $a['weight']; }, $fids);
+  
+  $form = array(
+    'fids' => array(
+      '#type' => 'checkboxes',
+      '#title' => t('Fields to be displayed'),
+      '#description' => t('Only the selected fields will be shown in the infobox'),
+      '#options' => $enabled,
+      '#default_value' => variable_get("wisski_vocab_ctrl_infobox_${type}_fids", array_keys($fids)),
+    ),
+    'weights' => array(
+      '#tree' => TRUE,
+      '#type' => 'fieldset',
+      '#title' => t('Order'),
+      '#collapsible' => TRUE,
+    ),
+  );
+  foreach ($weights as $fid => $w) {
+    $form['weights'][$fid] = array(
+      '#type' => 'weight',
+      '#title' => t('Weight for %n', array('%n' => $enabled[$fid])),
+      '#delta' => 50,
+      '#default_value' => $w,
+    );
+  }
+
+  return $form;
+}
+
+
+function wisski_vocab_ctrl_admin_infobox_submit($type, $values) {
+  
+  $weights = $values['weights'];
+  $fids = $values['fids'];
+  ksort($weights);
+  ksort($fids);
+  array_multisort($weights, SORT_ASC, $fids);
+  
+  $fids = array_keys(array_filter($fids));
+  variable_set("wisski_vocab_ctrl_infobox_${type}_fids", $fids);
+  variable_set("wisski_vocab_ctrl_infobox_${type}_weights", $weights);
+
+}
+
+
+function wisski_vocab_ctrl_admin_tooltip() {
+  
+  $form['#tree'] = TRUE;
+
+  $form['fields'] = wisski_vocab_ctrl_admin_infobox('tip');
+
+  $form['show_for_form'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Show infobox tooltip for structured data forms'),
+    '#default_value' => variable_get('wisski_vocab_ctrl_infobox_tips_show_for_form', TRUE),
+  );
+
+  $form['images_col'] = array(
+    '#type' => 'radios',
+    '#title' => t('Position of image and map'),
+    '#description' => t('...relative to the other fields'),
+    '#options' => array(1 => t('bottom'), 2 => t('left')),
+    '#default_value' => variable_get('wisski_vocab_ctrl_infobox_tips_images_col', 2),
+  );
+
+  $form['disable'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Disable tooltip'),
+    '#description' => t('Can be used for backwards compatibility.'),
+    '#default_value' => variable_get('wisski_vocab_ctrl_infobox_tips_disable', FALSE),
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save configuration'),
+  );
+  
+  return $form; 
+
+}
+
+
+function wisski_vocab_ctrl_admin_tooltip_submit($form, $form_state) {
+  
+  wisski_vocab_ctrl_admin_infobox_submit('tip', $form_state['values']['fields']);
+
+  variable_set('wisski_vocab_ctrl_infobox_tips_show_for_form', $form_state['values']['show_for_form']);
+  variable_set('wisski_vocab_ctrl_infobox_tips_images_col', $form_state['values']['images_col']);
+  variable_set('wisski_vocab_ctrl_infobox_tips_disable', $form_state['values']['disable']);
+  
+  drupal_goto('admin/settings/wisski/vocab_ctrl');
+}
