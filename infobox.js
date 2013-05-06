@@ -76,8 +76,8 @@
 
     $(elem).qtip({
       content : {
-        title : '<div id="wisski_vocab_ctrl_infobox_title"><h1>'+classLabel+'</h1><a href="' + uri + '">' + uri + '</a></div>',
-        text  : 'Please wait'
+        title : '<div id="wisski_vocab_ctrl_infobox_tip_title"><h1>'+classLabel+'</h1><a href="' + uri + '">' + uri + '</a></div>',
+        text  : 'Please wait...'
       },
       position : {
         target : target,
@@ -106,7 +106,7 @@
           
           var span = this.elements.target[0];
           if (span == null) {
-            this.updateContent('Please try again later ...');
+            this.updateContent('Please try again later...');
             return;
           }
           
@@ -119,7 +119,8 @@
             WissKI.vocab_ctrl.tooltips.getContentForNewElem(className,this);
           }else{
             var uri = WissKI.vocab_ctrl.tooltips.getDecodedAnnoURI(className);
-            WissKI.vocab_ctrl.tooltips.doRequest(uri,this);
+            WissKI.vocab_ctrl.tooltips.doRequest(uri, this, 2);
+            WissKI.vocab_ctrl.tooltips.fetchGroupInfo(uri, className, this);
           } 
         },
         // Martin:  problem: when annotation is selected in menu, tooltip stays forever as
@@ -173,13 +174,43 @@
           return;
         }
 //        var tooltipContent = WissKI.vocab_ctrl.tooltips.getContent(json);
-        tooltip.updateContent('<div id="wisski_vocab_ctrl_infoboxtip">' + response + '</div>');
+        tooltip.updateContent('<div id="wisski_vocab_ctrl_infobox_tip_body">' + response + '</div>');
       }
     });
   };
 
 
+  /** Retrieves metadata/fields from server
+  */
+  WissKI.vocab_ctrl.tooltips.fetchGroupInfo = function(uri, className, tooltip) {
+    
+    var group = WissKI.vocab_ctrl.tooltips.getAnnoClassLabel(className);
+    
+    // we only update the label if there is none
+    if (!group) {
 
+      $.ajax({
+        url : Drupal.settings.basePath + "wisski/vocab_ctrl/ajax/group",
+        content_type : "application/json",
+        type : "POST",
+        data : 'about=' + '{"uri":"' + uri + '","include":["id","name"]}',
+        timeout : 4000,
+        success : function (response) {
+          var json = Drupal.parseJson(response);
+          WissKI.vocab_ctrl.tooltips.setTitleGroupInfo(json.id, json.name);
+        }
+
+      });
+
+    }
+
+  };
+
+  WissKI.vocab_ctrl.tooltips.setTitleGroupInfo = function(id, name) {  
+  
+    $("#wisski_vocab_ctrl_infobox_tip_title h1").html('<span class="wisski_anno_class_' + id + '"></span>' + name);
+  
+  };
   
   /**
    * This method gets a string and search for wisski_anno_class_ID, extracts the ID and looks up the label.
@@ -190,15 +221,15 @@
    **/
   WissKI.vocab_ctrl.tooltips.getAnnoClassLabel = function(className) {
     
-    var annoClass = '<none>';
+    var annoClass = '';
     var annoClassRegEx = /wisski_anno_class_(\w*)/;
-    var annoClassID = annoClassRegEx.exec(className);
-    if (annoClassID != null && Drupal.settings.wisski.editor) {
-      annoClassID = decodeURIComponent(annoClassID[1]);
+    var annoClassIDRaw = annoClassRegEx.exec(className);
+    if (annoClassIDRaw != null && Drupal.settings.wisski.editor) {
+      annoClassID = decodeURIComponent(annoClassIDRaw[1]);
       var ontology = Drupal.settings.wisski.editor.ontology; 
       for (var i in ontology.classes) {
         if (ontology.classes[i].id == annoClassID) {
-          annoClass = ontology.classes[i].label;
+          annoClass = '<span class="wisski_anno_class_' + annoClassIDRaw[1] + '"></span>' + ontology.classes[i].label;
           break;
         }
       }

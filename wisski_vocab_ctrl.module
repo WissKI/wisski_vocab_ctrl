@@ -190,7 +190,7 @@ function wisski_vocab_ctrl_init() {
   
   $path = drupal_get_path('module', 'wisski_vocab_ctrl');
   drupal_add_css($path . '/wisski_vocab_ctrl.css');
-  if (!variable_get('wisski_vocab_ctrl_infobox_tips_disable', FALSE)) {
+  if (!variable_get('wisski_vocab_ctrl_infobox_tip_disable', FALSE)) {
     drupal_add_js($path . '/lib/jquery.qtip.js');
     drupal_add_js($path . '/infobox.js', 'module');
   }
@@ -199,7 +199,7 @@ function wisski_vocab_ctrl_init() {
           'wisski' => array(
               'vocab_ctrl' => array(
                   'about_url' => url('wisski/vocab_ctrl/ajax/infobox'),
-                  'showTooltipsForForm' => variable_get('wisski_vocab_ctrl_infobox_tips_show_for_form', TRUE),
+                  'showTooltipsForForm' => variable_get('wisski_vocab_ctrl_infobox_tip_show_for_form', TRUE),
                   ),
               ),
           ),
@@ -244,31 +244,54 @@ function wisski_vocab_ctrl_check_reindex($set = FALSE) {
 
 function wisski_vocab_ctrl_ajax_group() {
   
-  $query = (object) array('uri' => NULL, 'include' => array('id', 'name'));
+  $query = (object) array('id' => NULL, 'uri' => NULL, 'include' => array('id', 'name'));
   wisski_parse_http_params(&$query, 'about');
-  if ($query->uri === NULL) {
-    print "{}";
+  
+  $gid = NULL;
+  if ($query->id !== NULL) {
+    if (!node_access('view', 'individual')) {
+      print '{"error":"access forbidden"}';
+      exit;
+    }
+    
+    $gid = $query->id;
+     
+  } elseif ($query->uri === NULL) {
+
+    print '{"error":"no instance given"}';
     exit;
+  
+  } else {
+
+    // we need to know the node to check access
+    $nid = wisski_store_get_nid_for_instance($query->uri);
+    if ($nid === NULL) {
+      dpm('heha');
+      print '{"error":"unknown instance URI"}';
+      exit;
+    }
+    $node = node_load($nid);
+
+    // check if user has right to view instance
+    if (!node_access('view', $node)) {
+      dpm('htha');
+      print '{"error":"access forbidden"}';
+      exit;
+    }
+      
+    $gid = wisski_pathbuilder_getGroupIDForIndividual($query->uri);
+
   }
   
-  // we need to know the node to check access
-  $nid = wisski_store_get_nid_for_instance($query->uri);
-  if ($nid === NULL) {
-    print "{}";
+  $name = wisski_pathbuilder_getName($gid);
+  if (!$name) {
+    print '{"error":"unknown group ID"}';
     exit;
   }
-  $node = node_load($nid);
 
-  // check if user has right to view instance
-  if (!node_access('view', $node)) {
-    print "{}";
-    exit;
-  }
-      
-  $gid = wisski_pathbuilder_getGroupIDForIndividual($query->uri);
   $resp = array();
-  if (isset($query->include['id'])) $resp['id'] = $gid;
-  if (isset($query->include['name'])) $resp['name'] = wisski_pathbuilder_getName($gid);
+  if (in_array('id', $query->include)) $resp['id'] = $gid;
+  if (in_array('name', $query->include)) $resp['name'] = $name;
 
   drupal_json($resp);
   return;
@@ -301,8 +324,8 @@ function wisski_vocab_ctrl_ajax_infobox() {
     exit;
   }
       
-  $fids = variable_get("wisski_vocab_ctrl_block_infobox_fids", array('__vocs__', '__uris__', 'all', 'broader_labels', '__map__'));
-  $content = wisski_vocab_ctrl_infobox($query->uri, array(), $fids, variable_get('wisski_vocab_ctrl_infobox_tips_images_col', 2));
+  $fids = variable_get("wisski_vocab_ctrl_infobox_tip_fids", array('__vocs__', '__uris__', 'all', 'broader_labels', '__map__'));
+  $content = wisski_vocab_ctrl_infobox($query->uri, array(), $fids, variable_get('wisski_vocab_ctrl_infobox_tip_images_col', 2));
 
   if (!$content) {
     print "<div>No information available</div>";
@@ -338,7 +361,7 @@ function wisski_vocab_ctrl_block($op = 'list', $delta = 0, $edit = array()) {
       
       $inst = wisski_store_getObj()->wisski_ARCAdapter_delNamespace($node->title);
 
-      $fids = variable_get("wisski_vocab_ctrl_block_infobox_fids", array('__vocs__', '__uris__', 'all', 'broader_labels', '__map__'));
+      $fids = variable_get("wisski_vocab_ctrl_infobox_block_fids", array('__vocs__', '__uris__', 'all', 'broader_labels', '__map__'));
       $content = wisski_vocab_ctrl_infobox($inst, array(), $fids);
 
       if (empty($content)) return;
@@ -350,6 +373,7 @@ function wisski_vocab_ctrl_block($op = 'list', $delta = 0, $edit = array()) {
 
     case 'configure':
       
+      include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.admin.inc');
       return wisski_vocab_ctrl_admin_infobox('block');
 
     case 'save':
@@ -371,7 +395,7 @@ function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $ima
   if (empty($vocs)) $vocs = wisski_vocab_ctrl_get();
   $fids = (array) $fids;
   if (empty($fids)) $fids = array('all', 'broader_labels', '__vocs__', '__map__');
-  
+
   // check if we shall show the special fields and remove them from the vocab fields
   $inc = array(
     '__vocs__' => FALSE,
@@ -443,7 +467,7 @@ function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $ima
     $data = $data[$inst];
     
     // for the first pair of coordinates we draw a map
-    if ($inc['__map__'] && isset($data['latitude']) && isset($data['longitude']) && !isset($content['col1']['map'])) {
+    if ($inc['__map__'] && isset($data['latitude']) && isset($data['longitude']) && !isset($content["col$images_col"]['map'])) {
       // canonicalize coords to decimal format
       list($lat, $lng) = _wisski_vocab_ctrl_parse_coords($data['latitude'][0]['value'], $data['longitude'][0]['value']);
       
@@ -456,7 +480,7 @@ function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $ima
     }
     
     // the first image will be shown
-    if ($inc['__image__'] && isset($data['image']) && !isset($content['col1']['image'])) {
+    if ($inc['__image__'] && isset($data['image']) && !isset($content["col$images_col"]['image'])) {
       $image = $data['image'][0]['value'];
       $content["col$images_col"]['image'] = array(
         '#type' => 'markup',

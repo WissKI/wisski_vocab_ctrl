@@ -1215,7 +1215,7 @@ function wisski_vocab_ctrl_admin_tooltip() {
   $form['show_for_form'] = array(
     '#type' => 'checkbox',
     '#title' => t('Show infobox tooltip for structured data forms'),
-    '#default_value' => variable_get('wisski_vocab_ctrl_infobox_tips_show_for_form', TRUE),
+    '#default_value' => variable_get('wisski_vocab_ctrl_infobox_tip_show_for_form', TRUE),
   );
 
   $form['images_col'] = array(
@@ -1223,14 +1223,14 @@ function wisski_vocab_ctrl_admin_tooltip() {
     '#title' => t('Position of image and map'),
     '#description' => t('...relative to the other fields'),
     '#options' => array(1 => t('bottom'), 2 => t('left')),
-    '#default_value' => variable_get('wisski_vocab_ctrl_infobox_tips_images_col', 2),
+    '#default_value' => variable_get('wisski_vocab_ctrl_infobox_tip_images_col', 2),
   );
 
   $form['disable'] = array(
     '#type' => 'checkbox',
     '#title' => t('Disable tooltip'),
     '#description' => t('Can be used for backwards compatibility.'),
-    '#default_value' => variable_get('wisski_vocab_ctrl_infobox_tips_disable', FALSE),
+    '#default_value' => variable_get('wisski_vocab_ctrl_infobox_tip_disable', FALSE),
   );
 
   $form['submit'] = array(
@@ -1247,9 +1247,9 @@ function wisski_vocab_ctrl_admin_tooltip_submit($form, $form_state) {
   
   wisski_vocab_ctrl_admin_infobox_submit('tip', $form_state['values']['fields']);
 
-  variable_set('wisski_vocab_ctrl_infobox_tips_show_for_form', $form_state['values']['show_for_form']);
-  variable_set('wisski_vocab_ctrl_infobox_tips_images_col', $form_state['values']['images_col']);
-  variable_set('wisski_vocab_ctrl_infobox_tips_disable', $form_state['values']['disable']);
+  variable_set('wisski_vocab_ctrl_infobox_tip_show_for_form', $form_state['values']['show_for_form']);
+  variable_set('wisski_vocab_ctrl_infobox_tip_images_col', $form_state['values']['images_col']);
+  variable_set('wisski_vocab_ctrl_infobox_tip_disable', $form_state['values']['disable']);
   
   drupal_goto('admin/settings/wisski/vocab_ctrl');
 }
