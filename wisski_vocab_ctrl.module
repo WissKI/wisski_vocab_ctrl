@@ -266,7 +266,6 @@ function wisski_vocab_ctrl_ajax_group() {
     // we need to know the node to check access
     $nid = wisski_store_get_nid_for_instance($query->uri);
     if ($nid === NULL) {
-      dpm('heha');
       print '{"error":"unknown instance URI"}';
       exit;
     }
@@ -274,7 +273,6 @@ function wisski_vocab_ctrl_ajax_group() {
 
     // check if user has right to view instance
     if (!node_access('view', $node)) {
-      dpm('htha');
       print '{"error":"access forbidden"}';
       exit;
     }
