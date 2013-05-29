@@ -572,22 +572,22 @@ function _wisski_vocab_ctrl_lookup_field_labels($fid, $voc, $source, $target, $l
     switch ($match_mode) {
       case 'contains':
         $target = db_escape_string($target);
-        $target = strtr($target, array('\\' => '\\\\', '%' => '\\%', '_' => '\\_'));
+        $target = strtr($target, array('%' => '\\%', '_' => '\\_'));
         $q .= "value LIKE '%$target%'";
         break;
       case 'contains_word':
         $target = db_escape_string($target);
-        $target1 = strtr($target, array('\\' => '\\\\', '%' => '\\%', '_' => '\\_'));
+        $target1 = strtr($target, array('%' => '\\%', '_' => '\\_'));
         $q .= "(value = '$target' OR value LIKE '% $target1' OR value LIKE '% $target1 %' OR value LIKE '$target1 %')";
         break;
       case 'starts':
         $target = db_escape_string($target);
-        $target = strtr($target, array('\\' => '\\\\', '%' => '\\%', '_' => '\\_'));
+        $target = strtr($target, array('%' => '\\%', '_' => '\\_'));
         $q .= "value LIKE '$target%'";
         break;
       case 'starts_word':
         $target = db_escape_string($target);
-        $target1 = strtr($target, array('\\' => '\\\\', '%' => '\\%', '_' => '\\_'));
+        $target1 = strtr($target, array('%' => '\\%', '_' => '\\_'));
         $q .= "(value = '$target' OR value LIKE '$target1%')";
         break;
       default: // case 'exact':
