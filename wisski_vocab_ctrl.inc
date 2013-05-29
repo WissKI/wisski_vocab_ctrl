@@ -528,8 +528,6 @@ function _wisski_vocab_ctrl_lookup_direct($fid, $voc, $source, $target, $limit, 
   if ($limit) $sparql .= "LIMIT $limit \n";
   if ($offset) $sparql .= "OFFSET $offset \n";
   
-  dpm($sparql);
-
   $rows = $voc->store->query($sparql, 'rows');
 
   if ($voc->store->getErrors()) {
