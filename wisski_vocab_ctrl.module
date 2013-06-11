@@ -472,7 +472,7 @@ function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $ima
       $content["col$images_col"]['map'] = array(
         '#type' => 'markup',
         '#title' =>  $name_vocs ? t('Location according to @v', array('@v' => $vocs[$vid]->name)) : t('Location'),
-        '#value' => '<ul class="wisski_vocab_ctrl_infobox_map"><li' . ($name_vocs ? ' title="' . t('Location according to @v', array('@v' => $vocs[$vid]->name)) . '"' : '') . '>' . _wisski_vocab_ctrl_make_google_map($lat, $lng) .'</li></ul>',
+        '#value' => '<ul class="wisski_vocab_ctrl_infobox_map"><li' . ($name_vocs ? ' title="' . t('Location according to @v', array('@v' => $vocs[$vid]->name)) . '"' : '') . '>' . _wisski_vocab_ctrl_make_map($lat, $lng) .'</li></ul>',
         '#weight' => 10000,
       );
     }
@@ -584,19 +584,20 @@ function _wisski_vocab_ctrl_parse_coords_helper($parts) {
 }
 
 
-function _wisski_vocab_ctrl_make_google_map($lat, $lng) {
-  $zoomlvl = 'zoom=8';
-  $size = '&size=120x120';
-  $maptype = '&maptype=roadmap';
-  $marker = '&markers=color:red|label:A|' . $lat . ',' . $lng;
-  $googleMaps = 'http://maps.google.com/maps/api/staticmap?';
-  $googleMapsLink = 'http://maps.google.com/?';
-  $loc = 'q=loc:' . $lat . ',' . $lng;
-  $query = $googleMaps . $zoomlvl . $size . $maptype . $marker . '&sensor=false';
-  $linkQuery = $googleMapsLink  .  $loc  .  '&z=8';
-  $map = '<a target="_blank" href="'  .  $linkQuery  .  '"><img src="' . $query . '"></a>';
+function _wisski_vocab_ctrl_make_map($lat, $lng) {
+  $url = variable_get('wisski_vocab_ctrl_infobox_tip_custom_map_url', 'http://staticmap.openstreetmap.de/staticmap.php?center=%{lat},%{lon}&zoom=8&size=120x120&markers=%{lat},%{lon},ol-marker');
+  $link = variable_get('wisski_vocab_ctrl_infobox_tip_custom_map_link', 'http://www.openstreetmap.org/?mlat=%{lat}&mlon=%{lon}&zoom=8');
+  
+  $rep = array('%{lat}' => $lat, '%{lon}' => $lng);
+
+  if (trim($link) == '') {
+    $map = '<img src="' . strtr($url, $rep) . '"></a>';
+  } else {
+    $map = '<a target="_blank" href="'  .  strtr($link, $rep)  .  '"><img src="' . strtr($url, $rep) . '"></a>';
+  }
   return $map;
 }
+
 
 
 

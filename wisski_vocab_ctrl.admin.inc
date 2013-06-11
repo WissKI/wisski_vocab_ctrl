@@ -1226,6 +1226,39 @@ function wisski_vocab_ctrl_admin_tooltip() {
     '#default_value' => variable_get('wisski_vocab_ctrl_infobox_tip_images_col', 2),
   );
 
+  $form['custom_map_url'] = array(
+    '#type' => 'textfield',
+    '#title' => t('URL of the static map image'),
+    '#description' => t('
+      You should use %{lat} and %{lon} to refer to the latitude and longitude resp. You can try for!ls!osm!lm!gm!le',
+      array(
+        '!ls' => '<ul><li>',
+        '!gm' => t('Google Maps: http://maps.google.com/maps/api/staticmap?zoom=8&size=120x120&maptype=roadmap&markers=color:red|label:A|%{lat},%{lon}&sensor=false'),
+        '!lm' => '</li><li>',
+        '!osm' => t('OpenStreetMap: http://staticmap.openstreetmap.de/staticmap.php?center=%{lat},%{lon}&zoom=8&size=120x120&markers=%{lat},%{lon},ol-marker'),
+        '!le' => '</li></ul>',
+      )
+    ),
+    '#default_value' => variable_get('wisski_vocab_ctrl_infobox_tip_custom_map_url', 'http://staticmap.openstreetmap.de/staticmap.php?center=%{lat},%{lon}&zoom=8&size=120x120&markers=%{lat},%{lon},ol-marker'),
+  );
+
+  $form['custom_map_link'] = array(
+    '#type' => 'textfield',
+    '#title' => t('URL of the link on a static map image'),
+    '#description' => t(
+      'You should use %{lat} and %{lon} to refer to the latitude and longitude resp. If empty, no link will be set. You can try for!ls!osm!lm!gm!le',
+      array(
+        '!ls' => '<ul><li>',
+        '!gm' => t('Google Maps: http://maps.google.com/?q=loc:%{lat},%{lon}&z=8'),
+        '!lm' => '</li><li>',
+        '!osm' => t('OpenStreetMap: http://www.openstreetmap.org/?mlat=%{lat}&mlon=%{lon}&zoom=8'),
+        '!le' => '</li></ul>',
+      )
+    ),
+    '#default_value' => variable_get('wisski_vocab_ctrl_infobox_tip_custom_map_link', 'http://www.openstreetmap.org/?mlat=%{lat}&mlon=%{lon}&zoom=8'),
+  );
+
+
   $form['disable'] = array(
     '#type' => 'checkbox',
     '#title' => t('Disable tooltip'),
@@ -1250,6 +1283,8 @@ function wisski_vocab_ctrl_admin_tooltip_submit($form, $form_state) {
   variable_set('wisski_vocab_ctrl_infobox_tip_show_for_form', $form_state['values']['show_for_form']);
   variable_set('wisski_vocab_ctrl_infobox_tip_images_col', $form_state['values']['images_col']);
   variable_set('wisski_vocab_ctrl_infobox_tip_disable', $form_state['values']['disable']);
+  variable_set('wisski_vocab_ctrl_infobox_tip_custom_map_url', $form_state['values']['custom_map_url']);
+  variable_set('wisski_vocab_ctrl_infobox_tip_custom_map_link', $form_state['values']['custom_map_link']);
   
-  drupal_goto('admin/settings/wisski/vocab_ctrl');
 }
+

@@ -141,6 +141,8 @@ function _wisski_vocab_ctrl_get_triples($vid, $term_uri, $direct_store) {
     ),
   );
 
+  $group_uris = array($voc->group_id => $term_uri);  // accumulate group uris for reuse in other fields
+
   foreach ($voc->fields as $fid => $mapping) {
 
     $ret = wisski_vocab_ctrl_lookup($fid, $voc, $term_uri, NULL, NULL, NULL, NULL, 'never');
@@ -155,6 +157,12 @@ function _wisski_vocab_ctrl_get_triples($vid, $term_uri, $direct_store) {
 
       $parent_uri = $term_uri;
       $step = 1;
+
+      // inserted for grouping of paths
+      list($step, $group_uris, $parent_uri, $tr) = _wisski_vocab_ctrl_get_group_triples($path_data, $group_uris);
+      $triples = array_merge($triples, $tr);
+      // end insertion
+   
       $max_step = floor(count($path_array) / 2) + 1;  // for target_type "literal"
       if ($field['target_type'] == 'same_class') {
         $s = $max_step;
@@ -235,6 +243,59 @@ function _wisski_vocab_ctrl_get_triples($vid, $term_uri, $direct_store) {
   return $triples;
 
 }
+
+
+
+function _wisski_vocab_ctrl_get_group_triples($path_data, $group_uris) {
+
+  $gid = $path_data['group_id'];
+  if ($gid == 0) return array(1, $group_uris, $group_uris[$gid], array());
+
+  $group_path_array = _wisski_pathbuilder_calculate_group_samepart($gid);
+
+  if (isset($group_uris[$gid])) {
+    return array((count($group_path_array) + 1) / 2, $group_uris, $group_uris[$gid], array());
+  }
+
+  $group_path_data = wisski_pathbuilder_getPathData($gid);
+  list($step, $group_uris, $parent_uri, $triples) = _wisski_vocab_ctrl_get_group_triples($group_path_data, $group_uris);
+
+  $max_step = (count($group_path_array) + 1) / 2;
+
+  global $base_root, $base_path;
+  while ($step < $max_step) {
+
+    $uuid = wisski_get_uuid(4);
+    $step_uri = $base_root . $base_path . 'content/' . $uuid;
+
+    $triples[] = array(
+        's' => $parent_uri,
+        's_type' => 'uri',
+        'p' => $group_path_array["y" . ($step - 1)],
+        'o' => $step_uri,
+        'o_type' => 'uri',
+        );
+    $triples[] = array(
+        's' => $step_uri,
+        's_type' => 'uri',
+        'p' => 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
+        'o' => $group_path_array["x$step"],
+        'o_type' => 'uri',
+        );
+
+    $parent_uri = $step_uri;
+    $step++;
+
+  }
+
+  $group_uris[$gid] = $step_uri;
+
+  return array($max_step, $group_uris, $step_uri, $triples);
+
+}
+
+
+
 
 
 function _wisski_vocab_ctrl_get_path_array($voc, $field) {
