@@ -166,13 +166,13 @@ function _wisski_vocab_ctrl_get_triples($vid, $term_uri, $direct_store) {
       $max_step = floor(count($path_array) / 2) + 1;  // for target_type "literal"
       if ($field['target_type'] == 'same_class') {
         $s = $max_step;
-        for (;$s > 0; $s--) {
+        for (;$s >= $step; $s--) {
           if ($path_array["x$s"] == $path_array["x0"]) {
             $max_step = $s;
             break;
           }
         }
-        if ($s <= 0) {
+        if ($s < $step) {
           drupal_set_message("bad field mapping definition: path $path_id is not sameclass");
           continue; // no step contained same class, invalid definition
         }
@@ -247,27 +247,27 @@ function _wisski_vocab_ctrl_get_triples($vid, $term_uri, $direct_store) {
 
 
 function _wisski_vocab_ctrl_get_group_triples($path_data, $group_uris) {
-
+  
   $gid = $path_data['group_id'];
   if ($gid == 0) return array(1, $group_uris, $group_uris[$gid], array());
 
   $group_path_array = _wisski_pathbuilder_calculate_group_samepart($gid);
-
+  
   if (isset($group_uris[$gid])) {
     return array((count($group_path_array) + 1) / 2, $group_uris, $group_uris[$gid], array());
   }
 
   $group_path_data = wisski_pathbuilder_getPathData($gid);
   list($step, $group_uris, $parent_uri, $triples) = _wisski_vocab_ctrl_get_group_triples($group_path_data, $group_uris);
-
+  
   $max_step = (count($group_path_array) + 1) / 2;
 
   global $base_root, $base_path;
   while ($step < $max_step) {
-
+    
     $uuid = wisski_get_uuid(4);
     $step_uri = $base_root . $base_path . 'content/' . $uuid;
-
+    
     $triples[] = array(
         's' => $parent_uri,
         's_type' => 'uri',
@@ -282,14 +282,14 @@ function _wisski_vocab_ctrl_get_group_triples($path_data, $group_uris) {
         'o' => $group_path_array["x$step"],
         'o_type' => 'uri',
         );
-
+    
     $parent_uri = $step_uri;
     $step++;
-
+    
   }
 
   $group_uris[$gid] = $step_uri;
-
+  
   return array($max_step, $group_uris, $step_uri, $triples);
 
 }
@@ -477,30 +477,36 @@ function _wisski_vocab_ctrl_lookup_direct($fid, $voc, $source, $target, $limit, 
   }
   if ($target) {
     if ($field['target_type'] == 'literal') {
-      $target = wisski_store_escape_sparql_literal($target);
+      //$target = wisski_store_escape_sparql_literal($target);
       switch($match_mode) {
         case 'exact':
+          $target = wisski_store_escape_sparql_literal($target);
           $sparql .= '    FILTER (str(?target) = "' . $target . '") ' . "\n";
           break;
         case 'contains':
+          $target = wisski_store_escape_sparql_literal(wisski_store_escape_sparql_regex($target));
           $target = ".*$target.*";
           $sparql .= '    FILTER (regex(?target, "' . $target . '", "i")) ' . "\n";
           break;
         case 'contains_word':
+          $target = wisski_store_escape_sparql_literal(wisski_store_escape_sparql_regex($target));
           $wb = "[-\\s,'\\/.]";
           $target = "^$target$|^$target$wb.*|.*$wb$target$wb.*|.*$wb$target$";
           $sparql .= '    FILTER (regex(?target, "' . $target . '", "i")) ' . "\n";
           break;
         case 'starts':
+          $target = wisski_store_escape_sparql_literal(wisski_store_escape_sparql_regex($target));
           $target = "$target.*";
           $sparql .= '    FILTER (regex(?target, "' . $target . '", "i")) ' . "\n";
           break;
         case 'starts_word':
+          $target = wisski_store_escape_sparql_literal(wisski_store_escape_sparql_regex($target));
           $wb = "[-\\s,'\\/.]";
           $target = "^$target.*|.*$wb$target.*";
           $sparql .= '    FILTER (regex(?target, "' . $target . '", "i")) ' . "\n";
           break;
         case 'regex':
+          $target = wisski_store_escape_sparql_literal(wisski_store_escape_sparql_regex($target));
           $sparql .= '    FILTER (regex(?target, "' . $target . '", "i")) ' . "\n";
           break;
       }
@@ -521,12 +527,12 @@ function _wisski_vocab_ctrl_lookup_direct($fid, $voc, $source, $target, $limit, 
   }
   if ($limit) $sparql .= "LIMIT $limit \n";
   if ($offset) $sparql .= "OFFSET $offset \n";
-
+  
   $rows = $voc->store->query($sparql, 'rows');
 
   if ($voc->store->getErrors()) {
     foreach ($voc->store->getErrors() as $e) {
-      watchdog('wisski_vocab', check_plain($e), array(), WATCHDOG_WARNING);
+      drupal_set_message(check_plain($e), 'error');
     }
     return array();
   }
@@ -566,23 +572,23 @@ function _wisski_vocab_ctrl_lookup_field_labels($fid, $voc, $source, $target, $l
     switch ($match_mode) {
       case 'contains':
         $target = db_escape_string($target);
-        $target = strtr($target, array('\\' => '\\\\', '%' => '\\%', '_' => '\\_'));
+        $target = strtr($target, array('%' => '\\%', '_' => '\\_'));
         $q .= "value LIKE '%$target%'";
         break;
       case 'contains_word':
         $target = db_escape_string($target);
-        $target = strtr($target, array('\\' => '\\\\', '%' => '\\%', '_' => '\\_'));
-        $q .= "(value = '$target' OR value LIKE '% $target' OR value LIKE '% $target %' OR value LIKE '$target %')";
+        $target1 = strtr($target, array('%' => '\\%', '_' => '\\_'));
+        $q .= "(value = '$target' OR value LIKE '% $target1' OR value LIKE '% $target1 %' OR value LIKE '$target1 %')";
         break;
       case 'starts':
         $target = db_escape_string($target);
-        $target = strtr($target, array('\\' => '\\\\', '%' => '\\%', '_' => '\\_'));
+        $target = strtr($target, array('%' => '\\%', '_' => '\\_'));
         $q .= "value LIKE '$target%'";
         break;
       case 'starts_word':
         $target = db_escape_string($target);
-        $target = strtr($target, array('\\' => '\\\\', '%' => '\\%', '_' => '\\_'));
-        $q .= "(value = '$target' OR value LIKE '$target%')";
+        $target1 = strtr($target, array('%' => '\\%', '_' => '\\_'));
+        $q .= "(value = '$target' OR value LIKE '$target1%')";
         break;
       default: // case 'exact':
         $target = db_escape_string($target);
