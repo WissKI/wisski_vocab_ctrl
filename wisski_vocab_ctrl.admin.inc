@@ -411,8 +411,13 @@ function _wisski_vocab_ctrl_admin_build_voc_from_form_values($v) {
     $voc->indices = array('enabled' => TRUE, 'refresh_interval' => 1);
   }
 
+  if (empty($voc->matching_property)) {
+    $matching_props = variable_get('wisski_vocab_ctrl_matching_properties', unserialize(WISSKI_VOCAB_CTRL_MATCHING_PROPERTIES));
+    $default = key($matching_props);
+    $voc->matching_property = key($matching_props);
+  }
+
   variable_set('wisski_vocab_ctrl_next_index_cron', 0);
-  
   return $voc;
 
 }
@@ -1137,6 +1142,10 @@ function wisski_vocab_ctrl_admin_infobox($type) {
     '__vocs__' => array(
       'name' => t('Vocabularies containing the entry'),
       'weight' => isset($weights['__vocs__']) ? $weights['__vocs__'] : -50,
+    ),
+    '__uris__' => array(
+      'name' => t('URIs'),
+      'weight' => isset($weights['__uris__']) ? $weights['__uris__'] : -40,
     ),
     'broader_labels' => array(
       'name' => t('Broader entries'),

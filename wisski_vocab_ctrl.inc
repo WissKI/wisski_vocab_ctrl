@@ -99,7 +99,7 @@ function _wisski_vocab_ctrl_is_imported($vid, $term_uri) {
   include_once(drupal_get_path('module', 'wisski_pathbuilder') . '/wisski_pathbuilder.inc');
   $group_path_array = _wisski_pathbuilder_calculate_group_samepart($voc->group_id);
   
-  $q = "ASK { <$term_uri> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <" . $group_path_array['x0'] . '> . }';
+  $q = "ASK { { <$term_uri> ?p ?o. } UNION { ?s ?p <$term_uri> } }";
   $store = wisski_store_getObj()->wisski_ARCAdapter_getStore();
   $contains = $store->query($q, 'raw');
   if ($store->getErrors()) {
@@ -111,29 +111,215 @@ function _wisski_vocab_ctrl_is_imported($vid, $term_uri) {
 }
 
 
-function _wisski_vocab_ctrl_get_triples($vid, $term_uri, $direct_store) {
+/** Returns the URI for the local representation of a term.
+* Each term with a foreign URI (ie. not from this site) is given a
+* local URI upon import with the foreign URI being attached using a so-called 
+* matching property for reference. 
+* 
+* @return the local URI or NULL if the term_uri is not in the local store,
+* ie. it is not imported
+*/
+function wisski_vocab_ctrl_get_local_uri($term_uri) {
+  
+  global $base_url;
+
+  // if the term_uri's prefix is from this site, we just return it
+  // this is usually the case if the term_uri is from a local vocabulary
+  if (strpos($term_uri, $base_url) === 0) return $term_uri;
+  
+  // otherwise we have to look in the triple store for this term uri
+  // if it is present, there must be a triple with the term uri
+  // as subject or object and a matching property
+
+  // array(<property URI> => <TRUE if inverse property>, ...)
+  $matching_props = variable_get('wisski_vocab_ctrl_matching_properties', unserialize(WISSKI_VOCAB_CTRL_MATCHING_PROPERTIES));
+  
+  // build sparql query
+  $union = array();
+  foreach ($matching_props as $prop => $inverse) {
+    if ($inverse) {
+      $union[] = "{ <$term_uri> <$prop> ?o . }";
+    } else {
+      $union[] = "{ ?s <$prop> <$term_uri> . }";
+    }
+  }
+  $q = "SELECT * WHERE { \n" . join(" UNION\n", $union) . "\n}";
+  $store = wisski_store_getObj()->wisski_ARCAdapter_getStore();
+  $rows = $store->query($q, 'rows');
+  if ($store->getErrors()) {
+    foreach ($store->getErrors() as $e) drupal_set_message(t("Error using triple store: @e", array('@e' => $e)));
+  }
+  
+  // if the query returned nothing, the term is not in the local data
+  if (empty($rows)) return NULL;
+  
+  // we might get the same uri multiple times
+  // or other foreign uris that have to be sorted out
+  $local_uris_tmp = array();
+  $local_uris = array();
+  foreach ($rows as $row) {
+    if (isset($row['o'])) $local_uris_tmp[$row['o']] = 1;
+    else $local_uris_tmp[$row['s']] = 1;
+  }
+  foreach ($local_uris_tmp as $uri => $v) {
+    if (strpos($uri, $base_url) === 0) $local_uris[] = $uri;
+  }
+  
+  // there should be only one uri, otherwise warn
+  if (count($local_uris) > 1) drupal_set_message(t('There are multiple local instances for term %term. Please resolve manually.', array('%term' => check_plain($term_uri))));
+
+  return $local_uris[0];
+
+}
+
+
+/** Returns the URIs for the foreign representations of a term.
+* If $term_uri is a foreign URI it is returned.
+* Each term with a foreign URI (ie. not from this site) is given a
+* local URI upon import with the foreign URI being attached using a so-called 
+* matching property for reference. 
+* 
+* @return the foreign URIs or NULL if the term_uri is not in the local store
+*/
+function wisski_vocab_ctrl_get_foreign_uris($term_uri) {
+  
+  global $base_url;
+
+  // if the term_uri's prefix is not from this site, we just return it
+  if (strpos($term_uri, $base_url) !== 0) return array($term_uri);
+  
+  // otherwise we have to look in the triple store for this term uri
+  // if it is present, there may be one or more triples with the term uri
+  // as subject or object and a matching property
+
+  // array(<property URI> => <TRUE if inverse property>, ...)
+  $matching_props = variable_get('wisski_vocab_ctrl_matching_properties', unserialize(WISSKI_VOCAB_CTRL_MATCHING_PROPERTIES));
+  
+  // build sparql query
+  $union = array();
+  foreach ($matching_props as $prop => $inverse) {
+    if ($inverse) {
+      $union[] = "{ ?s <$prop> <$term_uri> . }";
+    } else {
+      $union[] = "{ <$term_uri> <$prop> ?o . }";
+    }
+  }
+  $q = "SELECT * WHERE { \n" . join(" UNION\n", $union) . "\n}";
+  $store = wisski_store_getObj()->wisski_ARCAdapter_getStore();
+  $rows = $store->query($q, 'rows');
+  if ($store->getErrors()) {
+    foreach ($store->getErrors() as $e) drupal_set_message(t("error using triple store: @e", array('@e' => $e)));
+  }
+  
+  // if the query returned nothing, the term is not in the local data
+  if (empty($rows)) return array();
+  
+  // we might get the same uri multiple times
+  // or local uris that have to be sorted out
+  $foreign_uris_tmp = array();
+  $foreign_uris = array();
+  foreach ($rows as $row) {
+    if (isset($row['o'])) $foreign_uris_tmp[$row['o']] = 1;
+    else $foreign_uris_tmp[$row['s']] = 1;
+  }
+  foreach ($foreign_uris_tmp as $uri => $v) {
+    if (strpos($uri, $base_url) !== 0) $foreign_uris[] = $uri;
+  }
+  
+  return $foreign_uris;
+
+}
+
+
+/** Import a term from a vocabulary.
+*
+* The term must be given by its URI.
+* For a term from a local vocabulary nothing is done.
+* For a term from a foreign vocabulary a local instance URI
+* is created and triples are generated from the fields.
+* 
+* $use_local_uri will be used for the local instance if non-empty.
+* If $use_local_uri is set and the term is already linked to another
+* local instance, the import will fail.
+*
+* If $graph_to_store is non-empty, the triples will be stored directly
+* to this graph in the local db.
+*
+* @return an array with the following structure:
+*   upon fail:    array(FALSE, <error msg>)
+*   upon success: array(TRUE, <local uri>, <array of triples>)
+*   <local uri> is the URI for the local instance for the term.
+*/
+function wisski_vocab_ctrl_import($vid, $term_uri, $graph_to_store = NULL, $use_local_uri = NULL) {
   global $base_root, $base_path;
-//  drupal_set_message("I'm alive");
-  if (!$vid || !$term_uri) return FALSE;
-//  drupal_set_message("I'm alive1");
+  
+  if (!$vid) return array(FALSE, t('No vocabulary given'));
+  if (!$term_uri) return array(FALSE, t('No term URI given'));
+
   if (!is_object($vid)) {
     $voc = wisski_vocab_ctrl_get($vid);
   } else {
     $voc = $vid;
   }
-  if (!$voc) return array();
-//  drupal_set_message("I'm alive2");
-  if (_wisski_vocab_ctrl_is_imported($voc, $term_uri)) {
-    // the triples were already stored!
-    return array();
+  if (!$voc) return array(FALSE, t('Invalid vocabulary ID: %id', array('%id' => $vid)));
+  
+  $local_uri = wisski_vocab_ctrl_get_local_uri($term_uri);
+  if ($local_uri) {
+    // this is a local vocab entry or the triples were already stored!
+    
+    if (!empty($use_local_uri) && $local_uri != $use_local_uri) {
+      // we don't permit a term to be linked to two instances in the local db
+      return array(FALSE, t('Term already imported with URI %uri', array('%uri' => check_plain($local_uri))));
+    } else {
+      // no required uri or the required uri is the same as existing
+      // just return the existant uri, triples were already created
+      return array(TRUE, $local_uri, array());
+    }
   }
-//  drupal_set_message("I'm alive3");
+  
+  if (empty($use_local_uri)) {
+    $use_local_uri = $base_root . $base_path . 'content/' . wisski_get_uuid(4);
+  }
+  
+  $triples = _wisski_vocab_ctrl_get_triples($voc, $term_uri, $graph_to_store, $use_local_uri);
+  return array(TRUE, $use_local_uri, $triples);
+  
+}
+
+
+
+function _wisski_vocab_ctrl_get_triples($voc, $term_uri, $graph_to_store, $local_uri) {
+  global $base_root, $base_path;
+
   include_once(drupal_get_path('module', 'wisski_pathbuilder') . '/wisski_pathbuilder.inc');
   $group_path_array = _wisski_pathbuilder_calculate_group_samepart($voc->group_id);
   
-  $triples = array(
-    array(
+  $matching_props = variable_get('wisski_vocab_ctrl_matching_properties', unserialize(WISSKI_VOCAB_CTRL_MATCHING_PROPERTIES));
+
+  if ($matching_props[$voc->matching_property]) {
+    // property to be interpreted inversely
+    $matching_triple = array(
       's' => $term_uri,
+      's type' => 'uri',
+      'p' => $voc->matching_property,
+      'o' => $local_uri,
+      'o type' => 'uri',
+    );
+  } else {
+    $matching_triple = array(
+      's' => $local_uri,
+      's type' => 'uri',
+      'p' => $voc->matching_property,
+      'o' => $term_uri,
+      'o type' => 'uri',
+    );
+
+  }
+
+  $triples = array(
+    $matching_triple,
+    array(
+      's' => $local_uri,
       's type' => 'uri',
       'p' => 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
       'o' => $group_path_array['x0'],
@@ -141,13 +327,13 @@ function _wisski_vocab_ctrl_get_triples($vid, $term_uri, $direct_store) {
     ),
   );
 
-  $group_uris = array($voc->group_id => $term_uri);  // accumulate group uris for reuse in other fields
+  $group_uris = array($voc->group_id => $local_uri); // accumulate group uris for reuse in other fields
 
   foreach ($voc->fields as $fid => $mapping) {
 
     $ret = wisski_vocab_ctrl_lookup($fid, $voc, $term_uri, NULL, NULL, NULL, NULL, 'never');
     if (!isset($ret[$term_uri][$fid]) || !$ret[$term_uri][$fid]) continue;
-  
+
     $field = wisski_vocab_ctrl_field_get($fid);
     $path_id = $mapping['cis_pid'];
     $path_data = wisski_pathbuilder_getPathData($path_id);
@@ -155,15 +341,15 @@ function _wisski_vocab_ctrl_get_triples($vid, $term_uri, $direct_store) {
 
     foreach ($ret[$term_uri][$fid] as $value) {
 
-      $parent_uri = $term_uri;
+      $parent_uri = $local_uri;
       $step = 1;
 
       // inserted for grouping of paths
       list($step, $group_uris, $parent_uri, $tr) = _wisski_vocab_ctrl_get_group_triples($path_data, $group_uris);
       $triples = array_merge($triples, $tr);
       // end insertion
-   
-      $max_step = floor(count($path_array) / 2) + 1;  // for target_type "literal"
+
+      $max_step = floor(count($path_array) / 2) + 1; // for target_type "literal"
       if ($field['target_type'] == 'same_class') {
         $s = $max_step;
         for (;$s >= $step; $s--) {
@@ -176,68 +362,68 @@ function _wisski_vocab_ctrl_get_triples($vid, $term_uri, $direct_store) {
           drupal_set_message("bad field mapping definition: path $path_id is not sameclass");
           continue; // no step contained same class, invalid definition
         }
-
       }
+
       while ($step < $max_step) {
-        
+
         $uuid = wisski_get_uuid(4);
         $step_uri = $base_root . $base_path . 'content/' . $uuid;
-        
+
         $triples[] = array(
-            's' => $parent_uri,
-            's_type' => 'uri',
-            'p' => $path_array["y" . ($step - 1)],
-            'o' => $step_uri,
-            'o_type' => 'uri',
-            );
+          's' => $parent_uri,
+          's_type' => 'uri',
+          'p' => $path_array["y" . ($step - 1)],
+          'o' => $step_uri,
+          'o_type' => 'uri',
+        );
         $triples[] = array(
-            's' => $step_uri,
-            's_type' => 'uri',
-            'p' => 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
-            'o' => $path_array["x$step"],
-            'o_type' => 'uri',
-            );
-        
+          's' => $step_uri,
+          's_type' => 'uri',
+          'p' => 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
+          'o' => $path_array["x$step"],
+          'o_type' => 'uri',
+        );
+
         $parent_uri = $step_uri;
         $step++;
-        
+
       }
 
       if ($field['target_type'] == 'literal') {
 
-         $triples[] = array(
-            's' => $parent_uri,
-            's_type' => 'uri',
-            'p' => $path_data["datatype_property"],
-            'o' => $value['value'],
-            'o_type' => 'literal',
-            'o_datatype' => isset($value['datatype']) ? $value['datatype'] : NULL,
-            'o_lang' => isset($value['lang']) ? $value['lang'] : NULL,
-            );
-      
+        $triples[] = array(
+          's' => $parent_uri,
+          's_type' => 'uri',
+          'p' => $path_data["datatype_property"],
+          'o' => $value['value'],
+          'o_type' => 'literal',
+          'o_datatype' => isset($value['datatype']) ? $value['datatype'] : NULL,
+          'o_lang' => isset($value['lang']) ? $value['lang'] : NULL,
+        );
+
       } elseif ($field['target_type'] == 'same_class') {
 
         $triples[] = array(
-            's' => $parent_uri,
-            's_type' => 'uri',
-            'p' => $path_array["y" . ($step - 1)],
-            'o' => $value['value'],
-            'o_type' => 'uri',
-            );
+          's' => $parent_uri,
+          's_type' => 'uri',
+          'p' => $path_array["y" . ($step - 1)],
+          'o' => $value['value'],
+          'o_type' => 'uri',
+        );
 
       }
- 
+
     }
 
   }
-  
+
   // create nodes for instances and save trilpes to standard instance graph
-  if ($direct_store) {
+  if (!empty($graph_to_store)) {
     foreach ($triples as $t) {
       $n = wisski_store_addNodeForTriple($t);
     }
     $store = wisski_store_getObj()->wisski_ARCAdapter_getStore();
-    $a = $store->insert($triples, wisski_store_getObj()->wisski_ARCAdapter_graphName());
+    $a = $store->insert($triples, $graph_to_store);
   }
   
   return $triples;
@@ -424,12 +610,12 @@ function _wisski_vocab_ctrl_lookup($fids, $voc, $source, $target, $limit, $offse
 
 
 // currently we only use indexes for labels. this is catched above!
-  return _wisski_vocab_ctrl_lookup_direct($fid, $voc, $source, $target, $limit, $offset, $match_mode);
+  return _wisski_vocab_ctrl_lookup_direct($fid, $voc, $source, $target, $limit, $offset, $match_mode, $is_autocomp);
   
 }
  
 
-function _wisski_vocab_ctrl_lookup_direct($fid, $voc, $source, $target, $limit, $offset, $match_mode) {
+function _wisski_vocab_ctrl_lookup_direct($fid, $voc, $source, $target, $limit, $offset, $match_mode, $is_autocomp = FALSE) {
 
   $field = wisski_vocab_ctrl_field_get($fid);
   
@@ -518,12 +704,14 @@ function _wisski_vocab_ctrl_lookup_direct($fid, $voc, $source, $target, $limit, 
   $sparql .= " \n}\n";
 
   // Limit the result list
-  if (!$source && $target) {
-    $sparql .= "ORDER BY ?source ?target \n";
-  } elseif (!$source) {
-    $sparql .= "ORDER BY ?source \n";
-  } elseif ($target) {
-    $sparql .= "ORDER BY ?target \n";
+  if (!$is_autocomp) {
+    if (!$source && $target) {
+      $sparql .= "ORDER BY ?source ?target \n";
+    } elseif (!$source) {
+      $sparql .= "ORDER BY ?source \n";
+    } elseif ($target) {
+      $sparql .= "ORDER BY ?target \n";
+    }
   }
   if ($limit) $sparql .= "LIMIT $limit \n";
   if ($offset) $sparql .= "OFFSET $offset \n";
@@ -611,7 +799,7 @@ function _wisski_vocab_ctrl_lookup_field_labels($fid, $voc, $source, $target, $l
   } elseif ($use_index != 'always') {
     // not indexed
     
-    return _wisski_vocab_ctrl_lookup_direct($fid, $voc, $source, $target, $limit, $offset, $match_mode);
+    return _wisski_vocab_ctrl_lookup_direct($fid, $voc, $source, $target, $limit, $offset, $match_mode, $is_autocomp);
     
   } else {
 

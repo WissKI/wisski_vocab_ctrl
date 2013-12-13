@@ -150,6 +150,11 @@ function wisski_vocab_ctrl_schema () {
         'length' => 255,
         'not null' => TRUE,
       ),
+      'matching_property' => array(
+        'type' => 'text',
+        'size' => 'normal',
+        'not null' => TRUE,
+      ),
       'fields' => array(
         'type' => 'text',
         'serialize' => TRUE,

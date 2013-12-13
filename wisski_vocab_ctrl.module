@@ -1,10 +1,14 @@
 <?php
 // $Id$
 
-/*
+/**
 * @author Martin Scholz, unless otherwise noted
 */
 
+
+define('WISSKI_VOCAB_CTRL_MATCHING_PROPERTIES', serialize(array('http://www.w3.org/TR/skos-reference/closeMatch' => FALSE)));
+define('WISSKI_VOCAB_CTRL_IMPORTED_ONLY', 1);
+define('WISSKI_VOCAB_CTRL_NOT_IMPORTED_ONLY', 2);
 
 
 function wisski_vocab_ctrl_perm () {
@@ -242,6 +246,15 @@ function wisski_vocab_ctrl_check_reindex($set = FALSE) {
 }
 
 
+
+/*============================================ *
+*  INFOBOX
+* ============================================ *
+* Functions dealing with infobox tooltip and block
+*/
+
+
+
 function wisski_vocab_ctrl_ajax_group() {
   
   $query = (object) array('id' => NULL, 'uri' => NULL, 'include' => array('id', 'name'));
@@ -264,7 +277,9 @@ function wisski_vocab_ctrl_ajax_group() {
   } else {
 
     // we need to know the node to check access
-    $nid = wisski_store_get_nid_for_instance($query->uri);
+    $local_uri = wisski_vocab_ctrl_get_local_uri($query->uri);
+    $nid = NULL;
+    if ($local_uri) $nid = wisski_store_get_nid_for_instance($local_uri);
     if ($nid === NULL) {
       print '{"error":"unknown instance URI"}';
       exit;
@@ -277,7 +292,7 @@ function wisski_vocab_ctrl_ajax_group() {
       exit;
     }
       
-    $gid = wisski_pathbuilder_getGroupIDForIndividual($query->uri);
+    $gid = wisski_pathbuilder_getGroupIDForIndividual($local_uri);
 
   }
   
@@ -307,8 +322,10 @@ function wisski_vocab_ctrl_ajax_infobox() {
     exit;
   }
   
-  $nid = wisski_store_get_nid_for_instance($query->uri);
-
+  // we need to know the node to check access
+  $local_uri = wisski_vocab_ctrl_get_local_uri($query->uri);
+  $nid = NULL;
+  if ($local_uri) $nid = wisski_store_get_nid_for_instance($local_uri);
   if ($nid === NULL) {
     print "<div>Unknown instance URI</div>";
     exit;
@@ -396,6 +413,7 @@ function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $ima
 
   // check if we shall show the special fields and remove them from the vocab fields
   $inc = array(
+    '__uris__' => FALSE,
     '__vocs__' => FALSE,
     '__map__' => FALSE,
     '__image__' => FALSE,
@@ -409,6 +427,7 @@ function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $ima
   
   // the special fields may need some normal fields that shall not be diplayed
   $inc_req = array(
+    '__uris__' => array('label'),
     '__vocs__' => array('label'),
     '__map__' => array('latitude', 'longitude'),
     '__image__' => array('image'),
@@ -422,12 +441,19 @@ function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $ima
     }
     $query_fids = array_unique($query_fids);
   }
+  
+  // get all the uris from local and foreign vocs
+  $local_uri = wisski_vocab_ctrl_get_local_uri($inst);
+  $all_uris = $foreign_uris = wisski_vocab_ctrl_get_foreign_uris($local_uri);
+  $all_uris[] = $local_uri;
 
   // do the lookup voc per voc
   $data_per_vid = array();
   foreach ($vocs as $v) {
-    $data = wisski_vocab_ctrl_lookup($query_fids, $v, $inst, NULL, NULL, NULL, 'exact', 'never');
-    if ($data) $data_per_vid[$v->vid] = $data;
+    foreach ($all_uris as $uri) {
+      $data = wisski_vocab_ctrl_lookup($query_fids, $v, $uri, NULL, NULL, NULL, 'exact', 'never');
+      if ($data) $data_per_vid[$v->vid] = $data;
+    }
   }
   
   if (count($data_per_vid) == 0) return NULL;  // no auth information, do not show the box
@@ -460,75 +486,92 @@ function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $ima
   }
   
   $c = 3;
-  foreach ($data_per_vid as $vid => $data) {
+  foreach ($data_per_vid as $vid => $data_per_uri) {
 
-    $data = $data[$inst];
-    
-    // for the first pair of coordinates we draw a map
-    if ($inc['__map__'] && isset($data['latitude']) && isset($data['longitude']) && !isset($content["col$images_col"]['map'])) {
-      // canonicalize coords to decimal format
-      list($lat, $lng) = _wisski_vocab_ctrl_parse_coords($data['latitude'][0]['value'], $data['longitude'][0]['value']);
-      
-      $content["col$images_col"]['map'] = array(
-        '#type' => 'markup',
-        '#title' =>  $name_vocs ? t('Location according to @v', array('@v' => $vocs[$vid]->name)) : t('Location'),
-        '#value' => '<ul class="wisski_vocab_ctrl_infobox_map"><li' . ($name_vocs ? ' title="' . t('Location according to @v', array('@v' => $vocs[$vid]->name)) . '"' : '') . '>' . _wisski_vocab_ctrl_make_map($lat, $lng) .'</li></ul>',
-        '#weight' => 10000,
-      );
-    }
-    
-    // the first image will be shown
-    if ($inc['__image__'] && isset($data['image']) && !isset($content["col$images_col"]['image'])) {
-      $image = $data['image'][0]['value'];
-      $content["col$images_col"]['image'] = array(
-        '#type' => 'markup',
-        '#value' => '<ul class="wisski_vocab_ctrl_infobox_image"><li' . ($name_vocs ? ' title="' . t('Image from @v', array('@v' => $vocs[$vid]->name)) . '"' : '') . '><img src="' . $image .'" alt="' . $image .'"/></li></ul>',
-        '#weight' => 10001,
-      );
-      
-    }
+    foreach ($data_per_uri as $uri => $data) {
 
-
-    foreach ($fids as $fid) {
-      if (!isset($data[$fid])) continue;
-      $values = $data[$fid];
-
-      if (!isset($content['col1']["field_$fid"])) {
-        $content['col1']["field_$fid"] = array(
-          '#type' => 'item',
-          '#title' => $fid == 'broader_labels' ? t('Broader entries') : check_plain($fields[$fid]['name']),
-          '#value' => array(),
-          '#weight' => $fid == 'label' ? 1 : ($fid == 'alt_label' ? 2 : $c++),
+      // for the first pair of coordinates we draw a map
+      if ($inc['__map__'] && isset($data['latitude']) && isset($data['longitude']) && !isset($content["col$images_col"]['map'])) {
+        // canonicalize coords to decimal format
+        list($lat, $lng) = _wisski_vocab_ctrl_parse_coords($data['latitude'][0]['value'], $data['longitude'][0]['value']);
+        
+        $content["col$images_col"]['map'] = array(
+          '#type' => 'markup',
+          '#title' =>  $name_vocs ? t('Location according to @v', array('@v' => $vocs[$vid]->name)) : t('Location'),
+          '#value' => '<ul class="wisski_vocab_ctrl_infobox_map"><li' . ($name_vocs ? ' title="' . t('Location according to @v', array('@v' => $vocs[$vid]->name)) . '"' : '') . '>' . _wisski_vocab_ctrl_make_map($lat, $lng) .'</li></ul>',
+          '#weight' => 10000,
         );
       }
       
-      if ($fid == 'broader_labels') {
+      // the first image will be shown
+      if ($inc['__image__'] && isset($data['image']) && !isset($content["col$images_col"]['image'])) {
+        $image = $data['image'][0]['value'];
+        $content["col$images_col"]['image'] = array(
+          '#type' => 'markup',
+          '#value' => '<ul class="wisski_vocab_ctrl_infobox_image"><li' . ($name_vocs ? ' title="' . t('Image from @v', array('@v' => $vocs[$vid]->name)) . '"' : '') . '><img src="' . $image .'" alt="' . $image .'"/></li></ul>',
+          '#weight' => 10001,
+        );
         
-        $value = join(' | ', array_map(function($a) { return check_plain($a); }, $values));
-        if (!isset($content['col1']["field_$fid"]['#value'][$value])) $content['col1']["field_$fid"]['#value'][$value] = array(); 
-        $content['col1']["field_$fid"]['#value'][$value][] = check_plain($vocs[$vid]->name);
+      }
 
-      } else {
+          // the first image will be shown
+      if ($inc['__uris__']) {
+        if (!isset($content["col1"]['field___uris__'])) {
+          $content["col1"]['field___uris__'] = array(
+            '#type' => 'item',
+            '#title' => t('URIs'),
+            '#value' => array(),
+            '#weight' => 100,
+          );
+        }
+        $content["col1"]['field___uris__']['#value'][$uri][] = check_plain($vocs[$vid]->name);
+        
+      }
 
-        foreach ($values as $v) {
-          $value = check_plain($v['value']);
+      foreach ($fids as $fid) {
+        if (!isset($data[$fid])) continue;
+        $values = $data[$fid];
+
+        if (!isset($content['col1']["field_$fid"])) {
+          $content['col1']["field_$fid"] = array(
+            '#type' => 'item',
+            '#title' => $fid == 'broader_labels' ? t('Broader entries') : check_plain($fields[$fid]['name']),
+            '#value' => array(),
+            '#weight' => $fid == 'label' ? 1 : ($fid == 'alt_label' ? 2 : $c++),
+          );
+        }
+        
+        if ($fid == 'broader_labels') {
+          
+          $value = join(' | ', array_map(function($a) { return check_plain($a); }, $values));
           if (!isset($content['col1']["field_$fid"]['#value'][$value])) $content['col1']["field_$fid"]['#value'][$value] = array(); 
           $content['col1']["field_$fid"]['#value'][$value][] = check_plain($vocs[$vid]->name);
-        }
 
+        } else {
+
+          foreach ($values as $v) {
+            $value = check_plain($v['value']);
+            if (!isset($content['col1']["field_$fid"]['#value'][$value])) $content['col1']["field_$fid"]['#value'][$value] = array(); 
+            $content['col1']["field_$fid"]['#value'][$value][] = check_plain($vocs[$vid]->name);
+          }
+
+        }
       }
     }
   }
   
+  // the fields' value is an array right now
+  // we need to flatten it and render it nicely as list
   foreach ($content['col1'] as $n => &$e) {
     if (substr($n, 0, 6) == 'field_') {
       $value = '<ul>';
+      // #value is an array with value => array of vocabs supporting this value
       foreach ($e['#value'] as $v => $voca) {
+        // first print the value, then the list of vocabs
         $value .= '<li>' . $v;
         if ($name_vocs) $value .= ' <span class="wisski_vocab_ctrl_infobox_voc_list">(' . join(', ',  $voca) . ')</span>';
         $value .= '</li>';
       }
-
       $value .= '</ul>';
       
       $e['#value'] = $value;
@@ -666,7 +709,15 @@ function wisski_vocab_ctrl_delete($vid) {
 */
 function wisski_vocab_ctrl_get_triples($vid, $term_uri, $direct_store = FALSE) {
   include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
-  return _wisski_vocab_ctrl_get_triples($vid, $term_uri, $direct_store);
+  if ($direct_store) {
+    $graph = wisski_store_getObj()->wisski_ARCAdapter_graphName();
+  } else {
+    $graph = NULL;
+  }
+  $return = wisski_vocab_ctrl_import($vid, $term_uri, $graph);
+  if ($return[0]) return $return[2];
+  else return array();
+  
 }
 
 
@@ -901,6 +952,11 @@ function wisski_vocab_ctrl_mapping_delete($mid) {
 *   only. If no index is defined, it will return emtpy set! 'normal' will
 *   prefer index data but fall back to real data if not defined.
 *   Indexes can currently only be defined for labels fields.
+* @parameter $do_not_order whether results should be ordered. By default (FALSE)
+*   queries will return a sorted result list such that subsequent calls to this
+*   function with increasing offset are garanteed to return the appropriate
+*   slice (eg. for paging). Set to TRUE if you don't that to increase
+*   performance.
 *
 * @return assoc array keys being the found source/term URIs and the values
 *   being an array where each key is a field id mapped to a list of values.
@@ -920,9 +976,9 @@ function wisski_vocab_ctrl_mapping_delete($mid) {
 *   array('broader label 1', 'broader label 2', ..., 'top label')
 *     
 */
-function wisski_vocab_ctrl_lookup($fids, $voc, $source, $target, $limit = NULL, $offset = NULL, $match_mode = 'exact', $use_index = 'normal', $is_autocomp = FALSE) {
+function wisski_vocab_ctrl_lookup($fids, $voc, $source, $target, $limit = NULL, $offset = NULL, $match_mode = 'exact', $use_index = 'normal', $do_not_order = FALSE) {
   include_once('wisski_vocab_ctrl.inc');
-  $ret = _wisski_vocab_ctrl_lookup($fids, $voc, $source, $target, $limit, $offset, $match_mode, $use_index, $is_autocomp);
+  $ret = _wisski_vocab_ctrl_lookup($fids, $voc, $source, $target, $limit, $offset, $match_mode, $use_index, $do_not_order);
   return $ret;
 }
 
@@ -932,6 +988,7 @@ function wisski_vocab_ctrl_lookup($fids, $voc, $source, $target, $limit = NULL, 
 * TODO: should be in wisski module or deleted
 */
 function wisski_log() {
+  return;
   $args = func_get_args();
   foreach ($args as $arg) {
     file_put_contents("/tmp/mswisski.log", "[" . date(DATE_ISO8601) . "] " . print_r($arg,true) . "\n", FILE_APPEND);
