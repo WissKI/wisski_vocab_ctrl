@@ -407,7 +407,15 @@ function wisski_vocab_ctrl_block($op = 'list', $delta = 0, $edit = array()) {
 function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $images_col = 1) {
   
   $vocs = (array) $vocs;
-  if (empty($vocs)) $vocs = wisski_vocab_ctrl_get();
+  if (empty($vocs)) {
+    // if we have no info in which vocs to search, we test for each voc if
+    // it has a label for the instance. If so, the instance is in the voc
+    $vocs = wisski_vocab_ctrl_get();
+    foreach ($vocs as $k => $v) {
+      $data = wisski_vocab_ctrl_lookup('labels', $v, $inst, NULL, NULL, NULL, 'exact', 'never');
+      if (!$data) unset($vocs[$k]);
+    }
+  }
   $fids = (array) $fids;
   if (empty($fids)) $fids = array('all', 'broader_labels', '__vocs__', '__map__');
 
