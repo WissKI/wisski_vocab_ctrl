@@ -1238,6 +1238,7 @@ function wisski_vocab_ctrl_admin_tooltip() {
   $form['custom_map_url'] = array(
     '#type' => 'textfield',
     '#title' => t('URL of the static map image'),
+    '#maxlength' => 1000,
     '#description' => t('
       You should use %{lat} and %{lon} to refer to the latitude and longitude resp. You can try for!ls!osm!lm!gm!le',
       array(
@@ -1254,6 +1255,7 @@ function wisski_vocab_ctrl_admin_tooltip() {
   $form['custom_map_link'] = array(
     '#type' => 'textfield',
     '#title' => t('URL of the link on a static map image'),
+    '#maxlength' => 1000,
     '#description' => t(
       'You should use %{lat} and %{lon} to refer to the latitude and longitude resp. If empty, no link will be set. You can try for!ls!osm!lm!gm!le',
       array(
