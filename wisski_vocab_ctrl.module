@@ -6,7 +6,7 @@
 */
 
 
-define('WISSKI_VOCAB_CTRL_MATCHING_PROPERTIES', serialize(array('http://www.w3.org/TR/skos-reference/closeMatch' => FALSE)));
+define('WISSKI_VOCAB_CTRL_MATCHING_PROPERTIES', serialize(array('http://www.w3.org/2004/02/skos/core#closeMatch' => FALSE)));
 define('WISSKI_VOCAB_CTRL_IMPORTED_ONLY', 1);
 define('WISSKI_VOCAB_CTRL_NOT_IMPORTED_ONLY', 2);
 
