@@ -623,6 +623,14 @@ function _wisski_vocab_ctrl_lookup_direct($fid, $voc, $source, $target, $limit, 
     return array();
   }
   
+  $ap = wisski_accesspoint_get($voc->aid);
+  if (function_exists($ap->module . $ap->type . '_field_cb_' . $fid)) {
+    return call_user_func($ap->module . $ap->type . '_field_cb_' . $fid, $ap, $source, $target, $limit, $offset, $match_mode, $is_autocomp);
+  }
+  if (function_exists($ap->module . $ap->type . '_fields_cb')) {
+    return call_user_func($ap->module . $ap->type . '_fields_cb', $fid, $ap, $source, $target, $limit, $offset, $match_mode, $is_autocomp);
+  }
+  
   if (isset($voc->fields[$fid]['trans_mid'])) {
     $mapping = wisski_vocab_ctrl_mapping_get($voc->fields[$fid]['trans_mid']);
     $regex = $mapping['regex'];
