@@ -6,7 +6,7 @@
 */
 
 
-define('WISSKI_VOCAB_CTRL_MATCHING_PROPERTIES', serialize(array('http://www.w3.org/TR/skos-reference/closeMatch' => FALSE)));
+define('WISSKI_VOCAB_CTRL_MATCHING_PROPERTIES', serialize(array('http://www.w3.org/2004/02/skos/core#closeMatch' => FALSE)));
 define('WISSKI_VOCAB_CTRL_IMPORTED_ONLY', 1);
 define('WISSKI_VOCAB_CTRL_NOT_IMPORTED_ONLY', 2);
 
@@ -257,6 +257,8 @@ function wisski_vocab_ctrl_check_reindex($set = FALSE) {
 
 function wisski_vocab_ctrl_ajax_group() {
   
+  include_once(dirname(__FILE__) . 'wisski_vocab_ctrl.inc');
+  
   $query = (object) array('id' => NULL, 'uri' => NULL, 'include' => array('id', 'name'));
   wisski_parse_http_params(&$query, 'about');
   
@@ -313,6 +315,8 @@ function wisski_vocab_ctrl_ajax_group() {
 
 
 function wisski_vocab_ctrl_ajax_infobox() {
+  
+  include_once(dirname(__FILE__) . 'wisski_vocab_ctrl.inc');
   
   $query = (object) array('uri' => NULL);
   wisski_parse_http_params(&$query, 'about');
@@ -406,8 +410,18 @@ function wisski_vocab_ctrl_block($op = 'list', $delta = 0, $edit = array()) {
 
 function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $images_col = 1) {
   
+  include_once(dirname(__FILE__) . 'wisski_vocab_ctrl.inc');
+
   $vocs = (array) $vocs;
-  if (empty($vocs)) $vocs = wisski_vocab_ctrl_get();
+  if (empty($vocs)) {
+    // if we have no info in which vocs to search, we test for each voc if
+    // it has a label for the instance. If so, the instance is in the voc
+    $vocs = wisski_vocab_ctrl_get();
+    foreach ($vocs as $k => $v) {
+      $data = wisski_vocab_ctrl_lookup('labels', $v, $inst, NULL, NULL, NULL, 'exact', 'never');
+      if (!$data) unset($vocs[$k]);
+    }
+  }
   $fids = (array) $fids;
   if (empty($fids)) $fids = array('all', 'broader_labels', '__vocs__', '__map__');
 
@@ -429,7 +443,7 @@ function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $ima
   $inc_req = array(
     '__uris__' => array('label'),
     '__vocs__' => array('label'),
-    '__map__' => array('latitude', 'longitude'),
+    '__map__' => array('latitude', 'longitude', 'label'),
     '__image__' => array('image'),
   );
   $query_fids = $fids;
@@ -494,11 +508,12 @@ function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $ima
       if ($inc['__map__'] && isset($data['latitude']) && isset($data['longitude']) && !isset($content["col$images_col"]['map'])) {
         // canonicalize coords to decimal format
         list($lat, $lng) = _wisski_vocab_ctrl_parse_coords($data['latitude'][0]['value'], $data['longitude'][0]['value']);
+        $label = $data['label'][0]['value'];
         
         $content["col$images_col"]['map'] = array(
           '#type' => 'markup',
           '#title' =>  $name_vocs ? t('Location according to @v', array('@v' => $vocs[$vid]->name)) : t('Location'),
-          '#value' => '<ul class="wisski_vocab_ctrl_infobox_map"><li' . ($name_vocs ? ' title="' . t('Location according to @v', array('@v' => $vocs[$vid]->name)) . '"' : '') . '>' . _wisski_vocab_ctrl_make_map($lat, $lng) .'</li></ul>',
+          '#value' => '<ul class="wisski_vocab_ctrl_infobox_map"><li' . ($name_vocs ? ' title="' . t('Location according to @v', array('@v' => $vocs[$vid]->name)) . '"' : '') . '>' . _wisski_vocab_ctrl_make_map($lat, $lng, $label) .'</li></ul>',
           '#weight' => 10000,
         );
       }
@@ -627,11 +642,11 @@ function _wisski_vocab_ctrl_parse_coords_helper($parts) {
 }
 
 
-function _wisski_vocab_ctrl_make_map($lat, $lng) {
+function _wisski_vocab_ctrl_make_map($lat, $lng, $label) {
   $url = variable_get('wisski_vocab_ctrl_infobox_tip_custom_map_url', 'http://staticmap.openstreetmap.de/staticmap.php?center=%{lat},%{lon}&zoom=8&size=120x120&markers=%{lat},%{lon},ol-marker');
   $link = variable_get('wisski_vocab_ctrl_infobox_tip_custom_map_link', 'http://www.openstreetmap.org/?mlat=%{lat}&mlon=%{lon}&zoom=8');
   
-  $rep = array('%{lat}' => $lat, '%{lon}' => $lng);
+  $rep = array('%{lat}' => $lat, '%{lon}' => $lng, '%{label}' => $label);
 
   if (trim($link) == '') {
     $map = '<img src="' . strtr($url, $rep) . '"></a>';
