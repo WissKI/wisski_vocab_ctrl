@@ -624,11 +624,11 @@ function _wisski_vocab_ctrl_lookup_direct($fid, $voc, $source, $target, $limit, 
   }
   
   $ap = wisski_accesspoint_get($voc->aid);
-  if (function_exists($ap->module . $ap->type . '_field_cb_' . $fid)) {
-    return call_user_func($ap->module . $ap->type . '_field_cb_' . $fid, $ap, $source, $target, $limit, $offset, $match_mode, $is_autocomp);
+  if (function_exists($ap->module . '_' . $ap->type . '_field_cb_' . $fid)) {
+    return call_user_func($ap->module . '_' . $ap->type . '_field_cb_' . $fid, $ap, $source, $target, $limit, $offset, $match_mode, $is_autocomp);
   }
-  if (function_exists($ap->module . $ap->type . '_fields_cb')) {
-    return call_user_func($ap->module . $ap->type . '_fields_cb', $fid, $ap, $source, $target, $limit, $offset, $match_mode, $is_autocomp);
+  if (function_exists($ap->module . '_' . $ap->type . '_fields_cb')) {
+    return call_user_func($ap->module . '_' . $ap->type . '_fields_cb', $fid, $ap, $source, $target, $limit, $offset, $match_mode, $is_autocomp);
   }
   
   if (isset($voc->fields[$fid]['trans_mid'])) {
@@ -858,7 +858,7 @@ function _wisski_vocab_ctrl_lookup_tree($voc, $source, $max_branches, $direction
     $nodes = array();
     if ($direction_fid) {
       $res = _wisski_vocab_ctrl_lookup($direction_fid, $voc, $uri, NULL, $max_branches, 0, NULL, 'never');
-      if ($res) {
+      if (!empty($res) && isset($res[$uri]) && isset($res[$uri][$direction_fid])) {
         foreach ($res[$uri][$direction_fid] as $u) {
           $nodes[$u['value']] = 1;
         }

@@ -257,7 +257,7 @@ function wisski_vocab_ctrl_check_reindex($set = FALSE) {
 
 function wisski_vocab_ctrl_ajax_group() {
   
-  include_once(dirname(__FILE__) . 'wisski_vocab_ctrl.inc');
+  include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
   
   $query = (object) array('id' => NULL, 'uri' => NULL, 'include' => array('id', 'name'));
   wisski_parse_http_params(&$query, 'about');
@@ -316,7 +316,7 @@ function wisski_vocab_ctrl_ajax_group() {
 
 function wisski_vocab_ctrl_ajax_infobox() {
   
-  include_once(dirname(__FILE__) . 'wisski_vocab_ctrl.inc');
+  include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
   
   $query = (object) array('uri' => NULL);
   wisski_parse_http_params(&$query, 'about');
@@ -410,20 +410,14 @@ function wisski_vocab_ctrl_block($op = 'list', $delta = 0, $edit = array()) {
 
 function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $images_col = 1) {
   
-  include_once(dirname(__FILE__) . 'wisski_vocab_ctrl.inc');
+  include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
 
   $vocs = (array) $vocs;
   if (empty($vocs)) {
-    // if we have no info in which vocs to search, we test for each voc if
-    // it has a label for the instance. If so, the instance is in the voc
     $vocs = wisski_vocab_ctrl_get();
-    foreach ($vocs as $k => $v) {
-      $data = wisski_vocab_ctrl_lookup('labels', $v, $inst, NULL, NULL, NULL, 'exact', 'never');
-      if (!$data) unset($vocs[$k]);
-    }
   }
   $fids = (array) $fids;
-  if (empty($fids)) $fids = array('all', 'broader_labels', '__vocs__', '__map__');
+  if (empty($fids)) $fids = array('label', 'alt_label', 'broader_labels', '__vocs__', '__map__');
 
   // check if we shall show the special fields and remove them from the vocab fields
   $inc = array(
@@ -445,6 +439,7 @@ function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $ima
     '__vocs__' => array('label'),
     '__map__' => array('latitude', 'longitude', 'label'),
     '__image__' => array('image'),
+    'broader_labels' => array('broader'),
   );
   $query_fids = $fids;
   if (!in_array('all', $query_fids)) {
@@ -455,6 +450,8 @@ function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $ima
     }
     $query_fids = array_unique($query_fids);
   }
+  // we don't need the label field as it will always be queried
+  if (($tmp = array_search('label', $query_fids)) !== FALSE) unset($query_fids[$tmp]);
   
   // get all the uris from local and foreign vocs
   $local_uri = wisski_vocab_ctrl_get_local_uri($inst);
@@ -463,19 +460,24 @@ function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $ima
 
   // do the lookup voc per voc
   $data_per_vid = array();
-  foreach ($vocs as $v) {
-    foreach ($all_uris as $uri) {
+  foreach ($all_uris as $uri) {
+    foreach ($vocs as $k => $v) {
+      // simple heuristic to speed things up: every entry should have a label
+      // => if there is no label, skip all other fields
+      $label_data = wisski_vocab_ctrl_lookup('label', $v, $uri, NULL, NULL, NULL, 'exact', 'never');
+      if (!$label_data) continue;
       $data = wisski_vocab_ctrl_lookup($query_fids, $v, $uri, NULL, NULL, NULL, 'exact', 'never');
       if ($data) $data_per_vid[$v->vid] = $data;
+      $data_per_vid[$v->vid][$uri]['label'] = $label_data[$uri]['label'];
     }
   }
-  
+
   if (count($data_per_vid) == 0) return NULL;  // no auth information, do not show the box
   
   $fields = wisski_vocab_ctrl_field_get();
-
+  
   $name_vocs = count($data_per_vid) != 1; // if there are multiple vocs, the name of the originating voc is appenaded to each value 
-
+  
   $content = array(
     '#prefix' => '<div class="wisski_vocab_ctrl_infobox"><table>',
     '#suffix' => '</table></div>',
@@ -580,10 +582,17 @@ function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $ima
   foreach ($content['col1'] as $n => &$e) {
     if (substr($n, 0, 6) == 'field_') {
       $value = '<ul>';
+      $fid = substr($n, 6);
       // #value is an array with value => array of vocabs supporting this value
       foreach ($e['#value'] as $v => $voca) {
         // first print the value, then the list of vocabs
-        $value .= '<li>' . $v;
+        $value .= '<li>';
+        // check if the field should be displayed as link
+        if (in_array($fid, array('__uris__')) || wisski_vocab_ctrl_field_get($fid, 'target_type') == 'same_class') {
+          $value .= l($v, $v);
+        } else {
+          $value .= $v;
+        }
         if ($name_vocs) $value .= ' <span class="wisski_vocab_ctrl_infobox_voc_list">(' . join(', ',  $voca) . ')</span>';
         $value .= '</li>';
       }
