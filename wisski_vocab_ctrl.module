@@ -215,7 +215,7 @@ function wisski_vocab_ctrl_init() {
 function wisski_vocab_ctrl_cron() {
   
   // execute cron mode indexing
-  include_once('wisski_vocab_ctrl.inc');
+  include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
   return _wisski_vocab_ctrl_index_rebuilds_exec_task();
 
 }
@@ -699,7 +699,7 @@ function _wisski_vocab_ctrl_make_map($lat, $lng, $label) {
 * - indices: assoc array with indexing settings
 */
 function wisski_vocab_ctrl_get($vid = NULL, $prop = NULL, $refresh = NULL) {
-  include_once('wisski_vocab_ctrl.inc');
+  include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
   return _wisski_vocab_ctrl_get($vid, $prop, $refresh);
 }
 
@@ -708,7 +708,7 @@ function wisski_vocab_ctrl_get($vid = NULL, $prop = NULL, $refresh = NULL) {
 * If not set, an id will be added.
 */
 function wisski_vocab_ctrl_save(&$voc) {
-  include_once('wisski_vocab_ctrl.inc');
+  include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
   return _wisski_vocab_ctrl_save($voc);
 }
 
@@ -716,7 +716,7 @@ function wisski_vocab_ctrl_save(&$voc) {
 /**Delete a vocab object from db
 */
 function wisski_vocab_ctrl_delete($vid) {
-  include_once('wisski_vocab_ctrl.inc');
+  include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
   return _wisski_vocab_ctrl_delete($vid);
 }
 
@@ -1001,7 +1001,7 @@ function wisski_vocab_ctrl_mapping_delete($mid) {
 *     
 */
 function wisski_vocab_ctrl_lookup($fids, $voc, $source, $target, $limit = NULL, $offset = NULL, $match_mode = 'exact', $use_index = 'normal', $do_not_order = FALSE) {
-  include_once('wisski_vocab_ctrl.inc');
+  include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
   $ret = _wisski_vocab_ctrl_lookup($fids, $voc, $source, $target, $limit, $offset, $match_mode, $use_index, $do_not_order);
   return $ret;
 }
