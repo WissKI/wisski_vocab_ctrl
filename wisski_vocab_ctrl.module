@@ -321,8 +321,8 @@ function wisski_vocab_ctrl_ajax_infobox() {
   $query = (object) array('uri' => NULL);
   wisski_parse_http_params(&$query, 'about');
 
-  if ($query->uri === NULL) {
-    print "<div>No instance URI</div>";
+  if (empty($query->uri)) {
+    print "<div>" . t('Undistinguished entity') . "</div>";
     exit;
   }
   
