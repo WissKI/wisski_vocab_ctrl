@@ -248,6 +248,7 @@
     
     var annoUriRegEx = /wisski_anno_uri_(\S*)/;
     var annoURIA = annoUriRegEx.exec(className);
+    if (annoURIA == null) return '';  
     var annoURI = decodeURIComponent(annoURIA[1]);
 
     return annoURI;
