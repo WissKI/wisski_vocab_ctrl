@@ -162,7 +162,6 @@ function wisski_vocab_ctrl_menu () {
   $items['wisski/vocab_ctrl/index_cron'] = array(
       'type' => MENU_CALLBACK,
       'page callback' => 'wisski_vocab_ctrl_admin_check_reindex',
-      'page arguments' => array(4, 5),
       'access callback' => TRUE,
       'file' => 'wisski_vocab_ctrl.admin.inc',
       );
@@ -190,7 +189,7 @@ function wisski_vocab_ctrl_init() {
   if (variable_get('wisski_vocab_ctrl_last_reindex', 0) + 36000 < time()) {
     variable_set('wisski_vocab_ctrl_needs_reindex', TRUE);
   }
-  //wisski_vocab_ctrl_check_reindex(FALSE);
+  wisski_vocab_ctrl_check_reindex(FALSE);
   
   $path = drupal_get_path('module', 'wisski_vocab_ctrl');
   drupal_add_css($path . '/wisski_vocab_ctrl.css');
@@ -237,7 +236,7 @@ function wisski_vocab_ctrl_check_reindex($set = FALSE) {
   if (variable_get('wisski_vocab_ctrl_needs_reindex', FALSE)) {
     global $base_root, $base_path;
     $ajax = '$.ajax({url : "' . url($base_root . $base_path . 'wisski/vocab_ctrl/index_cron') . '", ';
-    $ajax .= 'type : "GET", timeout : 200, success : function () {}});';
+    $ajax .= 'type : "GET", success : function () {}});';
     drupal_add_js($ajax, 'inline');
 
     $checked = TRUE;
@@ -257,7 +256,6 @@ function wisski_vocab_ctrl_check_reindex($set = FALSE) {
 
 function wisski_vocab_ctrl_ajax_group() {
   
-  include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
   module_load_include('inc', 'wisski_pathbuilder');
   
   $query = (object) array('id' => NULL, 'uri' => NULL, 'include' => array('id', 'name'));
@@ -382,7 +380,8 @@ function wisski_vocab_ctrl_block($op = 'list', $delta = 0, $edit = array()) {
       $inst = wisski_store_getObj()->wisski_ARCAdapter_delNamespace($node->title);
 
       $fids = variable_get("wisski_vocab_ctrl_infobox_block_fids", array('__vocs__', '__uris__', 'all', 'broader_labels', '__map__'));
-      $content = wisski_vocab_ctrl_infobox($inst, array(), $fids);
+      $exclude_local_vocabs = variable_get("wisski_vocab_ctrl_infobox_block_exclude_local_vocabs", FALSE);
+      $content = wisski_vocab_ctrl_infobox($inst, array(), $fids, 1, $exclude_local_vocabs);
 
       if (empty($content)) return;
 
@@ -409,7 +408,7 @@ function wisski_vocab_ctrl_block($op = 'list', $delta = 0, $edit = array()) {
 }
 
 
-function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $images_col = 1) {
+function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $images_col = 1, $exclude_local_vocabs = FALSE) {
   
   include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
 
@@ -457,7 +456,9 @@ function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $ima
   // get all the uris from local and foreign vocs
   $local_uri = wisski_vocab_ctrl_get_local_uri($inst);
   $all_uris = $foreign_uris = wisski_vocab_ctrl_get_foreign_uris($local_uri);
-  $all_uris[] = $local_uri;
+  if (!$exclude_local_vocabs) {
+    $all_uris[] = $local_uri;
+  }
 
   // do the lookup voc per voc
   $data_per_vid = array();
@@ -526,7 +527,7 @@ function wisski_vocab_ctrl_infobox($inst, $vocs = array(), $fids = array(), $ima
         $image = $data['image'][0]['value'];
         $content["col$images_col"]['image'] = array(
           '#type' => 'markup',
-          '#value' => '<ul class="wisski_vocab_ctrl_infobox_image"><li' . ($name_vocs ? ' title="' . t('Image from @v', array('@v' => $vocs[$vid]->name)) . '"' : '') . '><img src="' . $image .'" alt="' . $image .'"/></li></ul>',
+          '#value' => '<ul class="wisski_vocab_ctrl_infobox_image"><li' . ($name_vocs ? ' title="' . t('Image from @v', array('@v' => $vocs[$vid]->name)) . '"' : '') . '><img src="' . str_replace(' ', '%20', $image) .'" alt="' . $image .'"/></li></ul>',
           '#weight' => 10001,
         );
         
