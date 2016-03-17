@@ -259,7 +259,7 @@ function wisski_vocab_ctrl_ajax_group() {
   module_load_include('inc', 'wisski_pathbuilder');
   
   $query = (object) array('id' => NULL, 'uri' => NULL, 'include' => array('id', 'name'));
-  wisski_parse_http_params(&$query, 'about');
+  wisski_parse_http_params($query, 'about');
   
   $gid = NULL;
   if ($query->id !== NULL) {
@@ -318,7 +318,7 @@ function wisski_vocab_ctrl_ajax_infobox() {
   include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
   
   $query = (object) array('uri' => NULL);
-  wisski_parse_http_params(&$query, 'about');
+  wisski_parse_http_params($query, 'about');
 
   if (empty($query->uri)) {
     print "<div>" . t('Undistinguished entity') . "</div>";
