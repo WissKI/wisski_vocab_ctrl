@@ -257,6 +257,7 @@ function wisski_vocab_ctrl_check_reindex($set = FALSE) {
 function wisski_vocab_ctrl_ajax_group() {
   
   module_load_include('inc', 'wisski_pathbuilder');
+  include_once(dirname(__FILE__) . '/wisski_vocab_ctrl.inc');
   
   $query = (object) array('id' => NULL, 'uri' => NULL, 'include' => array('id', 'name'));
   wisski_parse_http_params($query, 'about');
